@@ -239,7 +239,8 @@ app.post("/api/search/references", async (c) => {
   });
 
   if (!response.ok) {
-    throw new HTTPException(502, { message: "EpicSearch unavailable" });
+    const errText = await response.text().catch(() => "");
+    throw new HTTPException(502, { message: `EpicSearch error ${response.status}: ${errText.slice(0, 200)}` });
   }
 
   const data = await response.json();
