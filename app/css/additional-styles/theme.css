@@ -80,3 +80,9 @@
     transform: translate3d(10px, 0, 0) scale(1.2);
   }
 }
+
+/* Ken Burns animation for bridge video preview */
+@keyframes kenBurns {
+  0% { transform: scale(1) translate(0, 0); }
+  100% { transform: scale(1.15) translate(-2%, -1%); }
+}
