@@ -118,13 +118,52 @@ function getInitialState() {
   };
 }
 
+const API_BASE = 'https://epic-studio-api.pd-302.workers.dev';
+
+const STYLE_CATEGORIES = [
+  '다크+네온', '화이트+미니멀', '우드+내추럴', '일러스트+플랫',
+  '그라데이션+모던', '모노크롬', '레트로+빈티지', '럭셔리+골드',
+  '테크+디지털', '캐주얼+팝',
+];
+
+const SERVICE_TIERS = [
+  {
+    id: 'self', name: '셀프', desc: '파일만 받아서 직접 처리',
+    price: '30~50만원', features: ['AI 생성', '업스케일', '레퍼런스 검색', 'PPT 생성', 'ZIP 다운로드'],
+    disabled: [],
+  },
+  {
+    id: 'basic', name: '기본', desc: '인쇄해서 배달까지',
+    price: '80~150만원', features: ['AI 생성', '업스케일', '레퍼런스 검색', 'PPT 생성', 'ZIP 다운로드', '인쇄 제작', '행사장 배달'],
+    disabled: [],
+  },
+  {
+    id: 'full', name: '풀', desc: '리터치부터 설치까지 올인원',
+    price: '200~500만원', features: ['AI 생성', '업스케일', '레퍼런스 검색', 'PPT 생성', 'ZIP 다운로드', '인쇄 제작', '행사장 배달', '디자이너 리터치', '현장 설치/철거'],
+    disabled: [],
+  },
+];
+
 const AppState = {
   ...getInitialState(),
   apiKey: '',
   model: 'gemini-3.1-flash-image-preview',
   _projectListOpen: false,
   _projectList: [],
-  _refAnalysis: null,  // 레퍼런스 분석 캐시 (저장 제외)
+  _refAnalysis: null,
+  // New: Reference search
+  _refSearchResults: [],
+  _refSearchQuery: '',
+  _refSearchLoading: false,
+  _refSelectedUrls: new Set(),
+  // New: Agent chat
+  _chatMessages: [],
+  _chatLoading: false,
+  // New: Service tier
+  _selectedTier: 'self',
+  // New: Bridge video
+  _bridgeStyle: 'kenBurns',
+  _bridgePaused: false,
 };
 
 // ════════════════════════════════════════════════════════════
@@ -1534,6 +1573,12 @@ function renderStep1() {
     <div style="margin-bottom:20px">
       <div class="section-title">Step 1 <span class="sub">입력 & 가이드라인 생성</span></div>
     </div>
+    <div class="panel" style="margin-bottom:16px">
+      <div class="panel-header"><div class="panel-title">서비스 유형</div></div>
+      <div class="panel-body">
+        ${renderTierSelector()}
+      </div>
+    </div>
     <div class="step1-layout">
       <!-- 좌측: 입력 패널 -->
       <div style="display:flex;flex-direction:column;gap:16px">
@@ -1555,13 +1600,14 @@ function renderStep1() {
           </div>
         </div>
         <div class="panel">
-          <div class="panel-header"><div class="panel-title">레퍼런스 이미지 <span style="color:var(--text3)">("이런 느낌으로", 최대 8장)</span></div></div>
+          <div class="panel-header"><div class="panel-title">레퍼런스 이미지 <span style="color:var(--text3)">("이런 느낌으로", 최대 14장)</span></div></div>
           <div class="panel-body">
             <div class="upload-area" id="refUploadArea">
               <input type="file" id="refFileInput" accept="image/*" multiple>
               <div>🎨 클릭하거나 이미지를 드롭</div>
             </div>
             <div class="thumb-grid" id="refThumbs">${renderThumbs(AppState.input.referenceImages, 'ref')}</div>
+            ${renderRefSearchPanel()}
           </div>
         </div>
         <div class="panel">
@@ -1592,6 +1638,15 @@ function renderStep1() {
             : versions.length === 0 ? '🎨 가이드라인 생성' : '✦ + 새 버전 생성'}
         </button>
         <div class="panel">
+          <div class="panel-header">
+            <div class="panel-title">AI 어시스턴트</div>
+            <button class="btn btn-ghost btn-sm" id="toggleLogBtn" style="font-size:10px">로그 보기</button>
+          </div>
+          <div class="panel-body" style="padding:0">
+            ${renderChatPanel()}
+          </div>
+        </div>
+        <div class="panel" id="logPanel" style="display:none">
           <div class="panel-header"><div class="panel-title">로그</div></div>
           <div class="panel-body" style="padding:0">
             <div id="log-area">${AppState.logs.map(l => `<div class="${l.type?'log-'+l.type:''}">${l.time} ${escapeHtml(l.message)}</div>`).join('')}</div>
@@ -2132,6 +2187,13 @@ function renderProductionCard(prod) {
               style="font-size:11px;font-family:var(--mono);min-height:44px;line-height:1.5;resize:vertical"
             >${escapeHtml(prod.renderInstruction || '')}</textarea>
           </div>
+          ${prod.status === 'done' ? renderUpscaleBar(prod) : ''}
+          ${prod.status === 'done' ? `
+            <div style="margin-top:10px">
+              <div style="font-size:11px;color:var(--text3);margin-bottom:6px">브릿지 영상 프리뷰</div>
+              ${renderBridgePreview(prod)}
+            </div>
+          ` : ''}
           <div style="margin-top:4px">
             <button class="prompt-toggle-btn" data-toggle-prod-prompt="${prod.id}">👁 프롬프트 보기/수정</button>
             <div class="prompt-edit-area" id="prod-prompt-area-${prod.id}">
@@ -2157,12 +2219,16 @@ function renderProdImageArea(prod) {
 }
 
 function renderThumbs(images, type) {
-  return images.map((img, i) => `
-    <div class="thumb">
-      <img src="data:${img.mime};base64,${img.base64}" alt="">
-      <button class="thumb-del" data-del-img="${type}" data-idx="${i}">✕</button>
-    </div>
-  `).join('');
+  return images.map((img, i) => {
+    const src = img.url || (img.base64 ? `data:${img.mime};base64,${img.base64}` : '');
+    return `
+      <div class="thumb">
+        <img src="${escapeHtml(src)}" alt="" onerror="this.style.opacity=0.3">
+        ${img.styleTags?.length ? `<div style="position:absolute;bottom:2px;left:2px;display:flex;gap:2px">${img.styleTags.slice(0,2).map(t => `<span class="ref-style-tag" style="font-size:8px;padding:1px 4px">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+        <button class="thumb-del" data-del-img="${type}" data-idx="${i}">✕</button>
+      </div>
+    `;
+  }).join('');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -2451,13 +2517,75 @@ function setupDelegatedEvents() {
         if (AppState._projectListOpen) AppState._projectList = await listProjects();
         render(); break;
       }
+      // New: Reference search
+      case 'refSearchBtn': {
+        const q = document.getElementById('refSearchInput')?.value;
+        const type = document.getElementById('refSearchType')?.value;
+        searchReferences(q, type); break;
+      }
+      case 'analyzeStyleBtn': {
+        const urls = AppState._refSearchResults.map(r => r.url).filter(Boolean);
+        analyzeRefStyles(urls); break;
+      }
+      case 'applyRefsBtn': applySelectedRefs(); break;
+      // New: Chat
+      case 'chatSendBtn': {
+        const input = document.getElementById('chatInput');
+        if (input?.value) { sendChatMessage(input.value); input.value = ''; }
+        break;
+      }
+      // New: Log toggle
+      case 'toggleLogBtn': {
+        const logPanel = document.getElementById('logPanel');
+        if (logPanel) logPanel.style.display = logPanel.style.display === 'none' ? '' : 'none';
+        break;
+      }
     }
+
+    // New: Reference grid selection
+    const refSel = t.closest('[data-ref-select]');
+    if (refSel) { toggleRefSelection(refSel.dataset.refSelect); return; }
+
+    // New: Tier selection
+    const tierCard = t.closest('[data-tier]');
+    if (tierCard) { AppState._selectedTier = tierCard.dataset.tier; render(); return; }
+
+    // New: Upscale
+    const upscaleBtn = t.closest('[data-upscale]');
+    if (upscaleBtn) { requestUpscale(upscaleBtn.dataset.upscale); return; }
+
+    // New: Upscale scale change
+    const upscaleScale = t.closest('[data-upscale-scale]');
+    if (upscaleScale) {
+      const prod = AppState.productions.find(p => p.id === upscaleScale.dataset.upscaleScale);
+      if (prod) prod.upscaleScale = parseInt(t.value) || 4;
+      return;
+    }
+
+    // New: Bridge video controls
+    const bridgeToggle = t.closest('[data-bridge-toggle]');
+    if (bridgeToggle) { AppState._bridgePaused = !AppState._bridgePaused; render(); return; }
+    const bridgePlay = t.closest('[data-bridge-play]');
+    if (bridgePlay) { e.stopPropagation(); AppState._bridgePaused = !AppState._bridgePaused; render(); return; }
+    const bridgeStyle = t.closest('[data-bridge-style]');
+    if (bridgeStyle) { e.stopPropagation(); AppState._bridgeStyle = bridgeStyle.dataset.bridgeStyle; render(); return; }
   });
 
   // Keyboard accessibility: Enter/Space on [role=button]
   document.addEventListener('keydown', e => {
     if ((e.key === 'Enter' || e.key === ' ') && e.target.getAttribute('role') === 'button') {
       e.preventDefault(); e.target.click();
+    }
+    // Chat: Enter to send
+    if (e.key === 'Enter' && e.target.id === 'chatInput' && !e.shiftKey) {
+      e.preventDefault();
+      if (e.target.value.trim()) { sendChatMessage(e.target.value); e.target.value = ''; }
+    }
+    // Ref search: Enter to search
+    if (e.key === 'Enter' && e.target.id === 'refSearchInput') {
+      e.preventDefault();
+      const type = document.getElementById('refSearchType')?.value;
+      searchReferences(e.target.value, type);
     }
   });
 
@@ -2529,7 +2657,6 @@ function bindInputListeners() {
       debouncedSave();
     });
   });
-  });
 
 }
 
@@ -2557,6 +2684,339 @@ async function handleImageUpload(files, type) {
   AppState.input[key] = [...current];
   render();
   debouncedSave();
+}
+
+// ════════════════════════════════════════════════════════════
+// [P] 레퍼런스 자동 검색
+// ════════════════════════════════════════════════════════════
+
+async function searchReferences(query, eventType) {
+  if (!query?.trim()) return;
+  AppState._refSearchLoading = true;
+  AppState._refSearchQuery = query;
+  render();
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/search/smart-references`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        event_type: eventType || undefined,
+        theme_keywords: query.split(/\s+/).filter(Boolean),
+        count: 12,
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`Search failed: ${resp.status}`);
+    const data = await resp.json();
+    AppState._refSearchResults = (data.images || []).map((img, i) => ({
+      id: 'ref_' + Date.now() + '_' + i,
+      url: img.thumbnail || img.url || img.link || '',
+      sourceUrl: img.source_url || img.link || img.url || '',
+      title: img.title || '',
+      styleTags: [],
+    }));
+    addLog(`레퍼런스 ${AppState._refSearchResults.length}장 검색 완료`, 'ok');
+  } catch (err) {
+    addLog('레퍼런스 검색 실패: ' + err.message, 'err');
+    AppState._refSearchResults = [];
+  }
+
+  AppState._refSearchLoading = false;
+  render();
+}
+
+async function analyzeRefStyles(imageUrls) {
+  if (!imageUrls?.length) return;
+  addLog(`스타일 분석 중 (${imageUrls.length}장)...`);
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/analyze/style`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image_urls: imageUrls, project_id: AppState.projectId }),
+    });
+
+    if (!resp.ok) throw new Error(`Analyze failed: ${resp.status}`);
+    const data = await resp.json();
+
+    for (const result of (data.results || [])) {
+      const item = AppState._refSearchResults.find(r => r.url === result.image_url || r.sourceUrl === result.image_url);
+      if (item) {
+        item.styleTags = result.style_tags || [];
+        item.description = result.description || '';
+      }
+    }
+    addLog('스타일 분석 완료', 'ok');
+  } catch (err) {
+    addLog('스타일 분석 실패: ' + err.message, 'err');
+  }
+  render();
+}
+
+function toggleRefSelection(refId) {
+  const urls = AppState._refSelectedUrls;
+  const item = AppState._refSearchResults.find(r => r.id === refId);
+  if (!item) return;
+
+  if (urls.has(item.url)) {
+    urls.delete(item.url);
+  } else {
+    if (urls.size >= MAX_REFERENCES) {
+      showToast(`최대 ${MAX_REFERENCES}장까지 선택 가능`, 'warn');
+      return;
+    }
+    urls.add(item.url);
+  }
+  render();
+}
+
+async function applySelectedRefs() {
+  const selected = AppState._refSearchResults.filter(r => AppState._refSelectedUrls.has(r.url));
+  if (!selected.length) return;
+
+  for (const ref of selected) {
+    const id = 'img_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    AppState.input.referenceImages.push({
+      id, name: ref.title || 'reference', mime: 'image/jpeg',
+      base64: null, url: ref.url, styleTags: ref.styleTags,
+    });
+  }
+
+  AppState._refAnalysis = null;
+  addLog(`선택 레퍼런스 ${selected.length}장 적용`, 'ok');
+  render();
+  debouncedSave();
+}
+
+function renderRefSearchPanel() {
+  const results = AppState._refSearchResults;
+  const loading = AppState._refSearchLoading;
+
+  return `
+    <div class="ref-search-panel">
+      <div class="ref-search-bar">
+        <input type="text" id="refSearchInput" placeholder="레퍼런스 검색 (예: 기업 세미나 포토월 모던)" value="${escapeHtml(AppState._refSearchQuery)}">
+        <select id="refSearchType">
+          <option value="">전체</option>
+          <option value="세미나">세미나</option>
+          <option value="컨퍼런스">컨퍼런스</option>
+          <option value="시상식">시상식</option>
+          <option value="전시">전시</option>
+          <option value="네트워킹">네트워킹</option>
+          <option value="교육">교육</option>
+          <option value="축제">축제</option>
+        </select>
+        <button class="btn btn-sm" id="refSearchBtn" ${loading ? 'disabled' : ''}>
+          ${loading ? '검색 중...' : '🔍 검색'}
+        </button>
+      </div>
+      ${loading ? '<div class="ref-search-loading"><div class="spinner" style="width:16px;height:16px;border-width:2px"></div> 이미지 검색 중...</div>' : ''}
+      ${!loading && results.length > 0 ? `
+        <div class="ref-grid">
+          ${results.map(r => `
+            <div class="ref-grid-item ${AppState._refSelectedUrls.has(r.url) ? 'selected' : ''}" data-ref-select="${r.id}">
+              <img src="${escapeHtml(r.url)}" alt="${escapeHtml(r.title)}" loading="lazy" onerror="this.src='data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 width=%2240%22 height=%2240%22><rect fill=%22%23333%22 width=%2240%22 height=%2240%22/></svg>'">
+              <div class="ref-select-badge">✓</div>
+              ${r.styleTags?.length ? `<div class="ref-style-tags">${r.styleTags.map(t => `<span class="ref-style-tag">${escapeHtml(t)}</span>`).join('')}</div>` : ''}
+            </div>
+          `).join('')}
+        </div>
+        <div style="display:flex;gap:8px;margin-top:12px;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;color:var(--text3)">${AppState._refSelectedUrls.size}장 선택됨</span>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="analyzeStyleBtn" ${results.length === 0 ? 'disabled' : ''}>🎨 스타일 분석</button>
+            <button class="btn btn-sm" id="applyRefsBtn" ${AppState._refSelectedUrls.size === 0 ? 'disabled' : ''}>✓ 선택 적용 (${AppState._refSelectedUrls.size})</button>
+          </div>
+        </div>
+      ` : ''}
+      ${!loading && results.length === 0 && AppState._refSearchQuery ? '<div style="text-align:center;padding:30px;color:var(--text3);font-size:12px">검색 결과 없음</div>' : ''}
+    </div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════════
+// [Q] 에이전트 채팅 UI
+// ════════════════════════════════════════════════════════════
+
+async function sendChatMessage(text) {
+  if (!text?.trim() || AppState._chatLoading) return;
+
+  AppState._chatMessages.push({ role: 'user', content: text.trim() });
+  AppState._chatLoading = true;
+  render();
+
+  try {
+    const activeVer = AppState.versions.find(v => v.id === AppState.activeVersionId);
+    const resp = await fetch(`${API_BASE}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: AppState._chatMessages,
+        context: {
+          guideline: activeVer?.guideline,
+          references: AppState.input.referenceImages.filter(r => r.styleTags?.length).map(r => r.styleTags),
+        },
+      }),
+    });
+
+    if (!resp.ok) throw new Error(`Chat failed: ${resp.status}`);
+    const data = await resp.json();
+    AppState._chatMessages.push({ role: 'assistant', content: data.reply });
+  } catch (err) {
+    AppState._chatMessages.push({ role: 'assistant', content: '죄송합니다, 응답을 생성할 수 없습니다. (' + err.message + ')' });
+  }
+
+  AppState._chatLoading = false;
+  render();
+
+  // Scroll to bottom
+  setTimeout(() => {
+    const el = document.querySelector('.chat-messages');
+    if (el) el.scrollTop = el.scrollHeight;
+  }, 50);
+}
+
+function renderChatPanel() {
+  const msgs = AppState._chatMessages;
+  return `
+    <div class="chat-container">
+      <div class="chat-messages">
+        ${msgs.length === 0 ? `
+          <div class="chat-msg system">Epic-Studio AI — 디자인 시안에 대해 자유롭게 질문하세요</div>
+        ` : ''}
+        ${msgs.map(m => `<div class="chat-msg ${m.role}">${escapeHtml(m.content)}</div>`).join('')}
+        ${AppState._chatLoading ? '<div class="chat-msg assistant" style="opacity:0.5"><div class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle"></div> 생각 중...</div>' : ''}
+      </div>
+      <div class="chat-input-bar">
+        <input type="text" id="chatInput" placeholder="예: 전체적으로 더 밝게 해줘, 네온 느낌 추가" ${AppState._chatLoading ? 'disabled' : ''}>
+        <button id="chatSendBtn" ${AppState._chatLoading ? 'disabled' : ''}>전송</button>
+      </div>
+    </div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════════
+// [R] 서비스 티어 선택 UI
+// ════════════════════════════════════════════════════════════
+
+function renderTierSelector() {
+  return `
+    <div class="tier-selector">
+      ${SERVICE_TIERS.map(tier => `
+        <div class="tier-card ${AppState._selectedTier === tier.id ? 'active' : ''}" data-tier="${tier.id}">
+          <div class="tier-badge">선택됨</div>
+          <div class="tier-name">${tier.name}</div>
+          <div class="tier-desc">${tier.desc}</div>
+          <div class="tier-price">${tier.price}</div>
+          <ul class="tier-features">
+            ${tier.features.map(f => `<li>${f}</li>`).join('')}
+          </ul>
+        </div>
+      `).join('')}
+    </div>
+  `;
+}
+
+// ════════════════════════════════════════════════════════════
+// [S] 업스케일 파이프라인 UI
+// ════════════════════════════════════════════════════════════
+
+// DPI map: item → target DPI for print
+const DPI_MAP = {
+  'default': 150,
+  '포스터': 300,
+  '명찰': 300,
+  '리플릿': 300,
+  '초대장': 300,
+  '엽서': 300,
+  '수료증': 300,
+  '상장': 300,
+  '스티커': 300,
+};
+
+function getTargetDpi(itemName) {
+  for (const [key, dpi] of Object.entries(DPI_MAP)) {
+    if (key !== 'default' && itemName.includes(key)) return dpi;
+  }
+  return DPI_MAP.default;
+}
+
+function renderUpscaleBar(prod) {
+  const dpi = getTargetDpi(prod.name);
+  const status = prod.upscaleStatus || 'none';
+  const scale = prod.upscaleScale || 4;
+
+  return `
+    <div class="upscale-bar">
+      <select data-upscale-scale="${prod.id}">
+        <option value="2" ${scale===2?'selected':''}>2x</option>
+        <option value="4" ${scale===4?'selected':''}>4x</option>
+        <option value="8" ${scale===8?'selected':''}>8x</option>
+      </select>
+      <span class="upscale-info">목표 ${dpi}dpi</span>
+      ${status !== 'none' ? `<span class="upscale-status ${status}">${
+        status === 'pending' ? '대기중' : status === 'done' ? '완료' : '오류'
+      }</span>` : ''}
+      <button class="btn btn-ghost btn-sm" data-upscale="${prod.id}" style="margin-left:auto" ${!prod.imageDataUrl ? 'disabled' : ''}>
+        ⬆ 업스케일
+      </button>
+    </div>
+  `;
+}
+
+async function requestUpscale(prodId) {
+  const prod = AppState.productions.find(p => p.id === prodId);
+  if (!prod?.imageDataUrl) return;
+
+  prod.upscaleStatus = 'pending';
+  render();
+  addLog(`업스케일 시작: ${prod.name} (${prod.upscaleScale || 4}x)`);
+
+  try {
+    // Convert base64 to blob
+    const b64 = prod.imageDataUrl.split(',')[1];
+    const blob = await fetch(`data:image/png;base64,${b64}`).then(r => r.blob());
+
+    const formData = new FormData();
+    formData.append('file', blob, `${prod.id}.png`);
+    formData.append('scale', String(prod.upscaleScale || 4));
+
+    const resp = await fetch(`${API_BASE}/api/upscale`, { method: 'POST', body: formData });
+    if (!resp.ok) throw new Error(`Upscale failed: ${resp.status}`);
+
+    const data = await resp.json();
+    prod.upscaleStatus = data.status === 'pending' ? 'pending' : 'done';
+    prod.upscaleUrl = data.url ? `${API_BASE}${data.url}` : null;
+    addLog(`업스케일 ${data.status}: ${prod.name}`, data.status === 'done' ? 'ok' : 'warn');
+  } catch (err) {
+    prod.upscaleStatus = 'error';
+    addLog(`업스케일 실패: ${err.message}`, 'err');
+  }
+
+  render();
+}
+
+// ════════════════════════════════════════════════════════════
+// [T] 브릿지 영상 프리뷰
+// ════════════════════════════════════════════════════════════
+
+function renderBridgePreview(prod) {
+  if (!prod?.imageDataUrl) return '';
+  const style = AppState._bridgeStyle;
+  const paused = AppState._bridgePaused;
+
+  return `
+    <div class="bridge-preview-wrap ${paused ? 'paused' : ''} style-${style}" data-bridge-toggle="${prod.id}">
+      <img src="${prod.imageDataUrl}" alt="${escapeHtml(prod.name)} bridge">
+      <div class="bridge-controls">
+        <button data-bridge-play="${prod.id}">${paused ? '▶' : '⏸'}</button>
+        <button class="${style === 'kenBurns' ? 'active' : ''}" data-bridge-style="kenBurns">Zoom</button>
+        <button class="${style === 'pan-left' ? 'active' : ''}" data-bridge-style="pan-left">Pan</button>
+        <button class="${style === 'pan-up' ? 'active' : ''}" data-bridge-style="pan-up">Tilt</button>
+      </div>
+    </div>
+  `;
 }
 
 // ════════════════════════════════════════════════════════════

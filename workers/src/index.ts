@@ -218,6 +218,223 @@ app.post("/api/search/references", async (c) => {
   return c.json(data);
 });
 
+// ─── AI Style Analysis (Gemini Vision) ──────────────────────────────────────
+
+const STYLE_CATEGORIES = [
+  "다크+네온", "화이트+미니멀", "우드+내추럴", "일러스트+플랫",
+  "그라데이션+모던", "모노크롬", "레트로+빈티지", "럭셔리+골드",
+  "테크+디지털", "캐주얼+팝",
+];
+
+app.post("/api/analyze/style", async (c) => {
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new HTTPException(500, { message: "GEMINI_API_KEY not configured" });
+  }
+
+  const { image_urls, project_id } = await c.req.json<{
+    image_urls: string[];
+    project_id?: string;
+  }>();
+
+  if (!image_urls?.length) {
+    throw new HTTPException(400, { message: "image_urls required" });
+  }
+
+  const results = await Promise.allSettled(
+    image_urls.slice(0, 12).map(async (url) => {
+      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+      const resp = await fetch(geminiUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{
+            parts: [
+              { text: `Analyze this event design image. Classify its style using 2-3 tags from this list: [${STYLE_CATEGORIES.join(", ")}]. Return ONLY valid JSON: {"tags":["tag1","tag2"],"description":"one-line Korean description","confidence":0.0-1.0}` },
+              { inline_data: { mime_type: "image/jpeg", data: "" } },
+              { file_data: { file_uri: url, mime_type: "image/jpeg" } },
+            ],
+          }],
+          generationConfig: { temperature: 0.2, maxOutputTokens: 256 },
+        }),
+      });
+
+      if (!resp.ok) return { image_url: url, style_tags: [], description: "분석 실패", confidence: 0 };
+
+      const data: any = await resp.json();
+      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      try {
+        const parsed = JSON.parse(text.replace(/```json?\n?|\n?```/g, "").trim());
+        return {
+          image_url: url,
+          style_tags: (parsed.tags ?? []).filter((t: string) => STYLE_CATEGORIES.includes(t)),
+          description: parsed.description ?? "",
+          confidence: parsed.confidence ?? 0.5,
+        };
+      } catch {
+        return { image_url: url, style_tags: [], description: text.slice(0, 100), confidence: 0.3 };
+      }
+    })
+  );
+
+  const analyzed = results.map((r) =>
+    r.status === "fulfilled" ? r.value : { image_url: "", style_tags: [], description: "Error", confidence: 0 }
+  );
+
+  // Store in D1 if project_id provided
+  if (project_id) {
+    for (const item of analyzed) {
+      if (!item.image_url) continue;
+      await c.env.EPIC_DB.prepare(
+        `INSERT OR IGNORE INTO reference_images (id, project_id, source_url, style_tags, created_at)
+         VALUES (?, ?, ?, ?, datetime('now'))`
+      ).bind(crypto.randomUUID(), project_id, item.image_url, JSON.stringify(item.style_tags)).run();
+    }
+  }
+
+  return c.json({ results: analyzed });
+});
+
+// ─── Smart Reference Search (with query building) ───────────────────────────
+
+const QUERY_TEMPLATES: Record<string, string[]> = {
+  "세미나": ["{theme} 세미나 무대 디자인", "{theme} 포럼 포토월"],
+  "컨퍼런스": ["{theme} 컨퍼런스 백드롭", "{theme} 대형 행사 무대"],
+  "시상식": ["{theme} 시상식 무대 연출", "{theme} 어워드 포토월"],
+  "전시": ["{theme} 전시부스 디자인", "{theme} 박람회 부스 연출"],
+  "네트워킹": ["{theme} 네트워킹 행사 디자인", "{theme} 밋업 공간 연출"],
+  "교육": ["{theme} 교육 행사 배너", "{theme} 수료식 무대"],
+  "축제": ["{theme} 페스티벌 디자인", "{theme} 축제 현장 연출"],
+};
+
+app.post("/api/search/smart-references", async (c) => {
+  const { event_type, theme_keywords = [], count = 12 } = await c.req.json<{
+    event_type?: string;
+    theme_keywords?: string[];
+    count?: number;
+  }>();
+
+  const theme = theme_keywords.join(" ") || "모던";
+  const templates = QUERY_TEMPLATES[event_type ?? ""] ?? ["{theme} 행사 디자인"];
+  const queries = templates.map((t) => t.replace("{theme}", theme));
+
+  const searchBase = c.env.EPIC_SEARCH_URL ?? "http://158.247.193.215:8788";
+  const allResults: any[] = [];
+
+  for (const q of queries) {
+    try {
+      const url = `${searchBase}/api/search?q=${encodeURIComponent(q)}&engine=all&limit=${Math.ceil(count / queries.length)}`;
+      const resp = await fetch(url, { headers: { "User-Agent": "epic-studio-api/1.0" } });
+      if (resp.ok) {
+        const data: any = await resp.json();
+        const items = data.results ?? data.images ?? [];
+        allResults.push(...items);
+      }
+    } catch { /* skip failed queries */ }
+  }
+
+  // Deduplicate by URL
+  const seen = new Set<string>();
+  const unique = allResults.filter((r) => {
+    const key = r.url || r.link || r.source_url || "";
+    if (!key || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  }).slice(0, count);
+
+  return c.json({ images: unique, queries_used: queries });
+});
+
+// ─── Upscale Proxy (Real-ESRGAN via external or HuggingFace) ────────────────
+
+app.post("/api/upscale", async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  const scale = Number(formData.get("scale") ?? 4);
+
+  if (!file) {
+    throw new HTTPException(400, { message: "No file provided" });
+  }
+
+  // Store original in R2
+  const origKey = `originals/${crypto.randomUUID()}.png`;
+  const arrayBuf = await file.arrayBuffer();
+  await c.env.EPIC_STORAGE.put(origKey, arrayBuf, {
+    httpMetadata: { contentType: "image/png" },
+  });
+
+  // For now, return the original with metadata indicating upscale is pending
+  // Real-ESRGAN integration requires a GPU endpoint (self-hosted or API)
+  const upscaledKey = `upscaled/${crypto.randomUUID()}.png`;
+  await c.env.EPIC_STORAGE.put(upscaledKey, arrayBuf, {
+    httpMetadata: { contentType: "image/png" },
+    customMetadata: { scale: String(scale), status: "pending", original: origKey },
+  });
+
+  return c.json({
+    original_key: origKey,
+    upscaled_key: upscaledKey,
+    scale,
+    status: "pending",
+    message: "업스케일 대기 중 — GPU 엔드포인트 연결 시 자동 처리",
+    url: `/api/images/${encodeURIComponent(upscaledKey)}`,
+  });
+});
+
+// ─── Agent Chat (Gemini conversation proxy) ─────────────────────────────────
+
+app.post("/api/chat", async (c) => {
+  const apiKey = c.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new HTTPException(500, { message: "GEMINI_API_KEY not configured" });
+  }
+
+  const { messages, context } = await c.req.json<{
+    messages: Array<{ role: string; content: string }>;
+    context?: { guideline?: any; references?: any[] };
+  }>();
+
+  if (!messages?.length) {
+    throw new HTTPException(400, { message: "messages required" });
+  }
+
+  const systemPrompt = `You are Epic-Studio AI assistant, an expert event design consultant.
+You help users refine their event visual designs. You speak Korean naturally.
+${context?.guideline ? `Current design guideline: ${JSON.stringify(context.guideline)}` : ""}
+${context?.references?.length ? `Selected reference styles: ${JSON.stringify(context.references)}` : ""}
+Give specific, actionable design suggestions. Be concise.`;
+
+  const contents = [
+    { role: "user", parts: [{ text: systemPrompt }] },
+    ...messages.map((m) => ({
+      role: m.role === "assistant" ? "model" : "user",
+      parts: [{ text: m.content }],
+    })),
+  ];
+
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+
+  const response = await fetch(geminiUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      contents,
+      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+    }),
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new HTTPException(response.status as any, { message: `Gemini error: ${err}` });
+  }
+
+  const data: any = await response.json();
+  const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "응답을 생성할 수 없습니다.";
+
+  return c.json({ reply });
+});
+
 // ─── Error Handler ────────────────────────────────────────────────────────────
 
 app.onError((err, c) => {
