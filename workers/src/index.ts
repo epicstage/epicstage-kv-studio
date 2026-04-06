@@ -7,8 +7,14 @@ export interface Env {
   EPIC_STORAGE: R2Bucket;
   EPIC_KV: KVNamespace;
   GEMINI_API_KEY: string;
+  OPENROUTER_API_KEY: string;
   EPIC_SEARCH_URL: string;
+  EPIC_SEARCH_API_KEY: string;
 }
+
+// OpenRouter config — Nano Banana 2 (Gemini 3.1 Flash Image Preview)
+const OPENROUTER_BASE = "https://openrouter.ai/api/v1";
+const OPENROUTER_MODEL = "google/gemini-3.1-flash-image-preview";
 
 const app = new Hono<{ Bindings: Env }>();
 
@@ -34,13 +40,41 @@ app.get("/", (c) => c.json({ status: "ok", service: "epic-studio-api" }));
 // ─── Gemini Proxy ────────────────────────────────────────────────────────────
 
 app.post("/api/generate", async (c) => {
-  const apiKey = c.env.GEMINI_API_KEY;
+  const apiKey = c.env.OPENROUTER_API_KEY || c.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new HTTPException(500, { message: "GEMINI_API_KEY not configured" });
+    throw new HTTPException(500, { message: "API key not configured (OPENROUTER or GEMINI)" });
   }
 
   const body = await c.req.json();
 
+  // Use OpenRouter if OPENROUTER_API_KEY is set, else fallback to direct Gemini
+  if (c.env.OPENROUTER_API_KEY) {
+    const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${c.env.OPENROUTER_API_KEY}`,
+        "HTTP-Referer": "https://epic-studio.epicstage.co.kr",
+        "X-Title": "Epic-Studio",
+      },
+      body: JSON.stringify({
+        model: body.model ?? OPENROUTER_MODEL,
+        messages: body.contents?.map((c: any) => ({
+          role: c.role === "model" ? "assistant" : c.role ?? "user",
+          content: c.parts?.map((p: any) => p.text ?? "").join("\n") || "",
+        })) ?? body.messages ?? [],
+        ...(body.generationConfig ?? {}),
+      }),
+    });
+
+    if (!response.ok) {
+      const err = await response.text();
+      throw new HTTPException(response.status as any, { message: `OpenRouter error: ${err}` });
+    }
+    return c.json(await response.json());
+  }
+
+  // Fallback: direct Gemini API
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${
     body.model ?? "gemini-2.0-flash-exp-image-generation"
   }:generateContent?key=${apiKey}`;
@@ -48,21 +82,15 @@ app.post("/api/generate", async (c) => {
   const response = await fetch(geminiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: body.contents,
-      generationConfig: body.generationConfig,
-    }),
+    body: JSON.stringify({ contents: body.contents, generationConfig: body.generationConfig }),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new HTTPException(response.status as any, {
-      message: `Gemini error: ${err}`,
-    });
+    throw new HTTPException(response.status as any, { message: `Gemini error: ${err}` });
   }
 
-  const data = await response.json();
-  return c.json(data);
+  return c.json(await response.json());
 });
 
 // ─── R2 Image Storage ─────────────────────────────────────────────────────────
@@ -207,7 +235,7 @@ app.post("/api/search/references", async (c) => {
   const url = `${searchBase}/api/search?q=${encodeURIComponent(query)}&engine=${engine}&limit=${limit}`;
 
   const response = await fetch(url, {
-    headers: { "User-Agent": "epic-studio-api/1.0" },
+    headers: { "User-Agent": "epic-studio-api/1.0", "Authorization": `Bearer ${c.env.EPIC_SEARCH_API_KEY}` },
   });
 
   if (!response.ok) {
@@ -241,29 +269,35 @@ app.post("/api/analyze/style", async (c) => {
     throw new HTTPException(400, { message: "image_urls required" });
   }
 
+  const orKey = c.env.OPENROUTER_API_KEY || apiKey;
+
   const results = await Promise.allSettled(
     image_urls.slice(0, 12).map(async (url) => {
-      const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-      const resp = await fetch(geminiUrl, {
+      const resp = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${orKey}`,
+          "HTTP-Referer": "https://epic-studio.epicstage.co.kr",
+        },
         body: JSON.stringify({
-          contents: [{
-            parts: [
-              { text: `Analyze this event design image. Classify its style using 2-3 tags from this list: [${STYLE_CATEGORIES.join(", ")}]. Return ONLY valid JSON: {"tags":["tag1","tag2"],"description":"one-line Korean description","confidence":0.0-1.0}` },
-              { inline_data: { mime_type: "image/jpeg", data: "" } },
-              { file_data: { file_uri: url, mime_type: "image/jpeg" } },
+          model: "google/gemini-2.0-flash-001",
+          messages: [{
+            role: "user",
+            content: [
+              { type: "text", text: `Analyze this event design image at URL: ${url}. Classify its style using 2-3 tags from: [${STYLE_CATEGORIES.join(", ")}]. Return ONLY valid JSON: {"tags":["tag1","tag2"],"description":"one-line Korean description","confidence":0.0-1.0}` },
+              { type: "image_url", image_url: { url } },
             ],
           }],
-          generationConfig: { temperature: 0.2, maxOutputTokens: 256 },
+          temperature: 0.2,
+          max_tokens: 256,
         }),
       });
 
       if (!resp.ok) return { image_url: url, style_tags: [], description: "분석 실패", confidence: 0 };
 
       const data: any = await resp.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "{}";
+      const text = data?.choices?.[0]?.message?.content ?? "{}";
       try {
         const parsed = JSON.parse(text.replace(/```json?\n?|\n?```/g, "").trim());
         return {
@@ -324,8 +358,8 @@ app.post("/api/search/smart-references", async (c) => {
 
   for (const q of queries) {
     try {
-      const url = `${searchBase}/api/search?q=${encodeURIComponent(q)}&engine=all&limit=${Math.ceil(count / queries.length)}`;
-      const resp = await fetch(url, { headers: { "User-Agent": "epic-studio-api/1.0" } });
+      const url = `${searchBase}/api/search?q=${encodeURIComponent(q)}&engine=naver&limit=${Math.ceil(count / queries.length)}`;
+      const resp = await fetch(url, { headers: { "User-Agent": "epic-studio-api/1.0", "Authorization": `Bearer ${c.env.EPIC_SEARCH_API_KEY}` } });
       if (resp.ok) {
         const data: any = await resp.json();
         const items = data.results ?? data.images ?? [];
@@ -385,9 +419,9 @@ app.post("/api/upscale", async (c) => {
 // ─── Agent Chat (Gemini conversation proxy) ─────────────────────────────────
 
 app.post("/api/chat", async (c) => {
-  const apiKey = c.env.GEMINI_API_KEY;
+  const apiKey = c.env.OPENROUTER_API_KEY || c.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new HTTPException(500, { message: "GEMINI_API_KEY not configured" });
+    throw new HTTPException(500, { message: "API key not configured" });
   }
 
   const { messages, context } = await c.req.json<{
@@ -405,32 +439,34 @@ ${context?.guideline ? `Current design guideline: ${JSON.stringify(context.guide
 ${context?.references?.length ? `Selected reference styles: ${JSON.stringify(context.references)}` : ""}
 Give specific, actionable design suggestions. Be concise.`;
 
-  const contents = [
-    { role: "user", parts: [{ text: systemPrompt }] },
-    ...messages.map((m) => ({
-      role: m.role === "assistant" ? "model" : "user",
-      parts: [{ text: m.content }],
-    })),
+  const chatMessages = [
+    { role: "system", content: systemPrompt },
+    ...messages.map((m) => ({ role: m.role, content: m.content })),
   ];
 
-  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
-
-  const response = await fetch(geminiUrl, {
+  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${apiKey}`,
+      "HTTP-Referer": "https://epic-studio.epicstage.co.kr",
+      "X-Title": "Epic-Studio",
+    },
     body: JSON.stringify({
-      contents,
-      generationConfig: { temperature: 0.7, maxOutputTokens: 1024 },
+      model: "google/gemini-2.0-flash-001",
+      messages: chatMessages,
+      temperature: 0.7,
+      max_tokens: 1024,
     }),
   });
 
   if (!response.ok) {
     const err = await response.text();
-    throw new HTTPException(response.status as any, { message: `Gemini error: ${err}` });
+    throw new HTTPException(response.status as any, { message: `Chat error: ${err}` });
   }
 
   const data: any = await response.json();
-  const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "응답을 생성할 수 없습니다.";
+  const reply = data?.choices?.[0]?.message?.content ?? "응답을 생성할 수 없습니다.";
 
   return c.json({ reply });
 });
