@@ -1,0 +1,29 @@
+name = "epic-studio-api"
+main = "src/index.ts"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+[vars]
+EPIC_SEARCH_URL = "http://158.247.193.215:8788"
+
+# Set via: wrangler secret put GEMINI_API_KEY
+# GEMINI_API_KEY =
+
+[[d1_databases]]
+binding = "EPIC_DB"
+database_name = "epic-studio-db"
+database_id = "REPLACE_WITH_ACTUAL_D1_ID"
+
+[[r2_buckets]]
+binding = "EPIC_STORAGE"
+bucket_name = "epic-studio-storage"
+
+[[kv_namespaces]]
+binding = "EPIC_KV"
+id = "REPLACE_WITH_ACTUAL_KV_ID"
+
+[dev]
+port = 8787
+
+[env.production]
+name = "epic-studio-api"

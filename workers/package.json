@@ -1,0 +1,20 @@
+{
+  "name": "epic-studio-api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "db:migrate": "wrangler d1 execute epic-studio-db --file=src/schema.sql",
+    "db:migrate:prod": "wrangler d1 execute epic-studio-db --file=src/schema.sql --remote",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "hono": "^4.4.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^4.20241022.0",
+    "typescript": "^5.5.4",
+    "wrangler": "^3.78.0"
+  }
+}
