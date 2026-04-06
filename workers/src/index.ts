@@ -41,42 +41,16 @@ app.get("/", (c) => c.json({ status: "ok", service: "epic-studio-api" }));
 
 // ─── Gemini Proxy ────────────────────────────────────────────────────────────
 
+// Image generation — Gemini direct only (responseModalities: ['IMAGE'] not supported by OpenRouter)
+// 김병모 담당 엔드포인트. 이미지 생성 엔진 로직은 김병모가 관리.
 app.post("/api/generate", async (c) => {
-  const apiKey = c.env.OPENROUTER_API_KEY || c.env.GEMINI_API_KEY;
+  const apiKey = c.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new HTTPException(500, { message: "API key not configured (OPENROUTER or GEMINI)" });
+    throw new HTTPException(500, { message: "GEMINI_API_KEY not configured" });
   }
 
   const body = await c.req.json();
 
-  // Use OpenRouter if OPENROUTER_API_KEY is set, else fallback to direct Gemini
-  if (c.env.OPENROUTER_API_KEY) {
-    const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "Authorization": `Bearer ${c.env.OPENROUTER_API_KEY}`,
-        "HTTP-Referer": "https://epic-studio.epicstage.co.kr",
-        "X-Title": "Epic-Studio",
-      },
-      body: JSON.stringify({
-        model: body.model ?? OPENROUTER_MODEL,
-        messages: body.contents?.map((c: any) => ({
-          role: c.role === "model" ? "assistant" : c.role ?? "user",
-          content: c.parts?.map((p: any) => p.text ?? "").join("\n") || "",
-        })) ?? body.messages ?? [],
-        ...(body.generationConfig ?? {}),
-      }),
-    });
-
-    if (!response.ok) {
-      const err = await response.text();
-      throw new HTTPException(response.status as any, { message: `OpenRouter error: ${err}` });
-    }
-    return c.json(await response.json());
-  }
-
-  // Fallback: direct Gemini API
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${
     body.model ?? "gemini-2.0-flash-exp-image-generation"
   }:generateContent?key=${apiKey}`;
