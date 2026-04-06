@@ -8,6 +8,8 @@ export interface Env {
   EPIC_KV: KVNamespace;
   GEMINI_API_KEY: string;
   OPENROUTER_API_KEY: string;
+  NAVER_CLIENT_ID: string;
+  NAVER_CLIENT_SECRET: string;
   EPIC_SEARCH_URL: string;
   EPIC_SEARCH_API_KEY: string;
 }
@@ -218,12 +220,11 @@ app.get("/api/projects/:id", async (c) => {
   });
 });
 
-// ─── EpicSearch Proxy (reference images) ─────────────────────────────────────
+// ─── Naver Search (direct API — no VPS proxy) ──────────────────────────────
 
 app.post("/api/search/references", async (c) => {
-  const { query, engine = "all", limit = 20 } = await c.req.json<{
+  const { query, limit = 20 } = await c.req.json<{
     query: string;
-    engine?: string;
     limit?: number;
   }>();
 
@@ -231,21 +232,55 @@ app.post("/api/search/references", async (c) => {
     throw new HTTPException(400, { message: "Query is required" });
   }
 
-  const searchBase = c.env.EPIC_SEARCH_URL ?? "http://158.247.193.215:8788";
-  const url = `${searchBase}/api/search?q=${encodeURIComponent(query)}&engine=${engine}&limit=${limit}`;
+  // Direct Naver blog/news search
+  const naverResults = await naverSearch(c.env, query, Math.min(limit, 20));
+  return c.json({ results: naverResults, total: naverResults.length, query });
+});
 
-  const response = await fetch(url, {
-    headers: { "User-Agent": "epic-studio-api/1.0", "Authorization": `Bearer ${c.env.EPIC_SEARCH_API_KEY}` },
-  });
+async function naverSearch(env: Env, query: string, limit: number) {
+  const clientId = env.NAVER_CLIENT_ID;
+  const clientSecret = env.NAVER_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return [];
 
-  if (!response.ok) {
-    const errText = await response.text().catch(() => "");
-    throw new HTTPException(502, { message: `EpicSearch error ${response.status}: ${errText.slice(0, 200)}` });
+  const headers = {
+    "X-Naver-Client-Id": clientId,
+    "X-Naver-Client-Secret": clientSecret,
+  };
+
+  const results: any[] = [];
+
+  // Search blog + image in parallel
+  const [blogResp, imageResp] = await Promise.allSettled([
+    fetch(`https://openapi.naver.com/v1/search/blog.json?query=${encodeURIComponent(query)}&display=${limit}`, { headers }),
+    fetch(`https://openapi.naver.com/v1/search/image?query=${encodeURIComponent(query)}&display=${limit}`, { headers }),
+  ]);
+
+  if (blogResp.status === "fulfilled" && blogResp.value.ok) {
+    const data: any = await blogResp.value.json();
+    for (const item of (data.items ?? [])) {
+      results.push({
+        title: item.title?.replace(/<[^>]+>/g, "") ?? "",
+        url: item.link ?? "",
+        thumbnail: item.thumbnail ?? "",
+        source: "naver_blog",
+      });
+    }
   }
 
-  const data = await response.json();
-  return c.json(data);
-});
+  if (imageResp.status === "fulfilled" && imageResp.value.ok) {
+    const data: any = await imageResp.value.json();
+    for (const item of (data.items ?? [])) {
+      results.push({
+        title: item.title?.replace(/<[^>]+>/g, "") ?? "",
+        url: item.link ?? "",
+        thumbnail: item.thumbnail ?? item.link ?? "",
+        source: "naver_image",
+      });
+    }
+  }
+
+  return results.slice(0, limit);
+}
 
 // ─── AI Style Analysis (Gemini Vision) ──────────────────────────────────────
 
@@ -359,13 +394,8 @@ app.post("/api/search/smart-references", async (c) => {
 
   for (const q of queries) {
     try {
-      const url = `${searchBase}/api/search?q=${encodeURIComponent(q)}&engine=naver&limit=${Math.ceil(count / queries.length)}`;
-      const resp = await fetch(url, { headers: { "User-Agent": "epic-studio-api/1.0", "Authorization": `Bearer ${c.env.EPIC_SEARCH_API_KEY}` } });
-      if (resp.ok) {
-        const data: any = await resp.json();
-        const items = data.results ?? data.images ?? [];
-        allResults.push(...items);
-      }
+      const items = await naverSearch(c.env, q, Math.ceil(count / queries.length));
+      allResults.push(...items);
     } catch { /* skip failed queries */ }
   }
 

@@ -6,6 +6,8 @@ compatibility_flags = ["nodejs_compat"]
 [vars]
 EPIC_SEARCH_URL = "http://158.247.193.215:8788"
 EPIC_SEARCH_API_KEY = "epic-search-e3715777a1c2c8d64819693119bea210"
+NAVER_CLIENT_ID = "E3U5DOUE4zzLsdOP4caR"
+NAVER_CLIENT_SECRET = "FmMKjhYCXG"
 
 # Set via: wrangler secret put OPENROUTER_API_KEY
 # OPENROUTER_API_KEY =
