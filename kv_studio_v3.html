@@ -2666,7 +2666,10 @@ function renderStep1() {
           <div class="panel">
             <div class="panel-header">
               <div class="panel-title">버전 목록 <span style="color:var(--accent2)">(${versions.length}개)</span></div>
-              ${versions.length > 0 ? `<button class="btn btn-sm" id="goStep2Btn">Step 2 →</button>` : ''}
+              <div style="display:flex;gap:8px">
+                <button class="btn btn-ghost btn-sm" id="generateVersionBtn2" ${AppState.isProcessing ? 'disabled' : ''}>✦ + 새 버전</button>
+                <button class="btn btn-sm" id="goStep2Btn">Step 2 →</button>
+              </div>
             </div>
             <div class="panel-body">
               <div class="ver-list">
@@ -2723,6 +2726,15 @@ function renderVersionCard(ver) {
   `;
 }
 
+function updateVersionColor(verId, colorKey, hex) {
+  const ver = AppState.versions.find(v => v.id === verId);
+  if (!ver?.guideline?.color_palette?.[colorKey]) return;
+  ver.guideline.color_palette[colorKey].hex = hex;
+  ver.preview.colors = Object.values(ver.guideline.color_palette).slice(0, 4).map(c => c.hex).filter(Boolean);
+  render();
+  debouncedSave();
+}
+
 function renderGuidelineViewer(ver) {
   const g = ver.guideline;
   if (!g) return '';
@@ -2744,9 +2756,13 @@ function renderGuidelineViewer(ver) {
       if (s.key === 'color_palette') {
         content = Object.entries(data).map(([k, v]) => `
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
-            <span class="color-chip" style="background:${v.hex}"></span>
-            <span style="font-family:var(--mono);font-size:11px;color:var(--accent2)">${k}</span>
-            <span style="font-family:var(--mono);font-size:11px;color:var(--text3)">${v.hex}</span>
+            <input type="color" value="${v.hex || '#000000'}"
+              data-color-pick="${ver.id}" data-color-key="${k}"
+              style="width:28px;height:28px;padding:1px;border:1px solid var(--border);border-radius:4px;background:none;cursor:pointer;flex-shrink:0">
+            <span style="font-family:var(--mono);font-size:11px;color:var(--accent2);min-width:60px">${k}</span>
+            <input type="text" value="${v.hex || ''}"
+              data-color-hex="${ver.id}" data-color-key="${k}"
+              style="font-family:var(--mono);font-size:11px;width:72px;background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text1)">
             <span style="font-size:11px;color:var(--text2)">${v.usage || ''}</span>
           </div>
         `).join('');
@@ -3326,9 +3342,23 @@ function bindEvents() {
 
   // 버전 생성
   document.getElementById('generateVersionBtn')?.addEventListener('click', generateNewVersion);
+  document.getElementById('generateVersionBtn2')?.addEventListener('click', generateNewVersion);
 
   // Step 1 → 2
   document.getElementById('goStep2Btn')?.addEventListener('click', () => { AppState.currentStep = 2; render(); });
+
+  // 컬러 팔레트 커스터마이즈
+  document.querySelectorAll('[data-color-pick]').forEach(el => {
+    el.addEventListener('change', () => updateVersionColor(el.dataset.colorPick, el.dataset.colorKey, el.value));
+  });
+  document.querySelectorAll('[data-color-hex]').forEach(el => {
+    const apply = () => {
+      const hex = el.value.trim();
+      if (/^#[0-9A-Fa-f]{6}$/.test(hex)) updateVersionColor(el.dataset.colorHex, el.dataset.colorKey, hex);
+    };
+    el.addEventListener('blur', apply);
+    el.addEventListener('keydown', e => { if (e.key === 'Enter') apply(); });
+  });
 
   // 버전 활성화 (카드 클릭)
   document.querySelectorAll('[data-activate-version]').forEach(el => {
