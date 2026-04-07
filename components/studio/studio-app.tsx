@@ -2,6 +2,7 @@
 
 import { useStore } from "./use-store";
 import { generateGuideline, createVersion } from "./guideline-generator";
+import { generateGuidelinePdf, downloadAsZip } from "./export-utils";
 import TierSelector from "./tier-selector";
 import EventInput from "./event-input";
 import ReferenceSearch from "./reference-search";
@@ -173,6 +174,17 @@ export default function StudioApp() {
                       </button>
                     )}
 
+                    {/* PDF export */}
+                    <button
+                      onClick={() => generateGuidelinePdf(
+                        activeVersion.guideline,
+                        activeVersion.guideline.event_summary?.name || "가이드라인"
+                      )}
+                      className="w-full rounded-xl border border-gray-800 px-4 py-3 text-sm text-gray-400 transition-all hover:border-gray-700 hover:text-gray-300"
+                    >
+                      PDF 내보내기
+                    </button>
+
                     {/* Mood keywords */}
                     <div className="rounded-lg border border-gray-800 p-3">
                       <div className="mb-2 text-[10px] uppercase tracking-wider text-gray-600">미리보기</div>
@@ -202,6 +214,27 @@ export default function StudioApp() {
         <div className="space-y-6">
           <CatalogSelector />
           <ProductionGrid />
+
+          {/* ZIP download */}
+          {useStore.getState().productions.filter(p => p.status === "done").length > 0 && (
+            <div className="flex justify-center">
+              <button
+                onClick={async () => {
+                  const prods = useStore.getState().productions.filter(p => p.status === "done" && p.imageUrl);
+                  if (!prods.length) return;
+                  const items = prods.map(p => ({
+                    name: `${p.name.replace(/[/\\]/g, "_")}.png`,
+                    data: p.imageUrl!,
+                  }));
+                  const name = confirmedVersion?.guideline?.event_summary?.name || "epic-studio";
+                  await downloadAsZip(items, `${name}-제작물.zip`);
+                }}
+                className="rounded-lg bg-gradient-to-t from-indigo-600 to-indigo-500 px-8 py-3 text-sm font-medium text-white shadow-[inset_0px_1px_0px_0px_theme(colors.white/.16)]"
+              >
+                ZIP 다운로드 ({useStore.getState().productions.filter(p => p.status === "done").length}개)
+              </button>
+            </div>
+          )}
         </div>
       )}
     </div>
