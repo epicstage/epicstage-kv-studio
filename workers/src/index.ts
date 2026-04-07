@@ -476,6 +476,51 @@ Give specific, actionable design suggestions. Be concise.`;
   return c.json({ reply });
 });
 
+// ─── Vector Conversion (Recraft SVG) ────────────────────────────────────────
+
+app.post("/api/vectorize", async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  if (!file) throw new HTTPException(400, { message: "No file provided" });
+
+  // Store original
+  const origKey = `vectors/orig-${crypto.randomUUID()}.png`;
+  const buf = await file.arrayBuffer();
+  await c.env.EPIC_STORAGE.put(origKey, buf, { httpMetadata: { contentType: "image/png" } });
+
+  // Recraft API ($0.01/call) — placeholder until API key configured
+  // https://www.recraft.ai/docs
+  return c.json({
+    original_key: origKey,
+    svg_key: null,
+    status: "pending",
+    message: "벡터 변환 대기 — Recraft API 키 설정 후 자동 처리",
+  });
+});
+
+// ─── PSD Layer Separation ───────────────────────────────────────────────────
+
+app.post("/api/separate-layers", async (c) => {
+  const formData = await c.req.formData();
+  const file = formData.get("file") as File | null;
+  if (!file) throw new HTTPException(400, { message: "No file provided" });
+
+  // Store original
+  const origKey = `layers/orig-${crypto.randomUUID()}.png`;
+  const buf = await file.arrayBuffer();
+  await c.env.EPIC_STORAGE.put(origKey, buf, { httpMetadata: { contentType: "image/png" } });
+
+  // PSD generation requires server-side processing (photopea API or canvas manipulation)
+  // Placeholder response
+  return c.json({
+    original_key: origKey,
+    psd_key: null,
+    layers: ["background", "text", "logo"],
+    status: "pending",
+    message: "PSD 레이어 분리 대기 — 서버 처리 엔드포인트 연결 필요",
+  });
+});
+
 // ─── Error Handler ────────────────────────────────────────────────────────────
 
 app.onError((err, c) => {
