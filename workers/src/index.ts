@@ -55,10 +55,18 @@ app.post("/api/generate", async (c) => {
     body.model ?? "gemini-2.0-flash-exp-image-generation"
   }:generateContent?key=${apiKey}`;
 
+  const geminiBody: Record<string, unknown> = {
+    contents: body.contents,
+    generationConfig: body.generationConfig,
+  };
+  if (body.system) {
+    geminiBody.system_instruction = { parts: [{ text: body.system }] };
+  }
+
   const response = await fetch(geminiUrl, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents: body.contents, generationConfig: body.generationConfig }),
+    body: JSON.stringify(geminiBody),
   });
 
   if (!response.ok) {
@@ -429,16 +437,17 @@ app.post("/api/chat", async (c) => {
     throw new HTTPException(500, { message: "API key not configured" });
   }
 
-  const { messages, context } = await c.req.json<{
+  const { messages, context, system } = await c.req.json<{
     messages: Array<{ role: string; content: string }>;
     context?: { guideline?: any; references?: any[] };
+    system?: string;
   }>();
 
   if (!messages?.length) {
     throw new HTTPException(400, { message: "messages required" });
   }
 
-  const systemPrompt = `You are Epic-Studio AI assistant, an expert event design consultant.
+  const systemPrompt = system ?? `You are Epic-Studio AI assistant, an expert event design consultant.
 You help users refine their event visual designs. You speak Korean naturally.
 ${context?.guideline ? `Current design guideline: ${JSON.stringify(context.guideline)}` : ""}
 ${context?.references?.length ? `Selected reference styles: ${JSON.stringify(context.references)}` : ""}
