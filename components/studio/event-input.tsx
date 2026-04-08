@@ -47,10 +47,11 @@ export default function EventInput({
     const toProcess = Array.from(files).slice(0, remaining);
     for (const file of toProcess) {
       const base64 = await fileToBase64(file);
+      const mime = file.name.endsWith(".ai") ? "application/pdf" : file.type;
       addCiDoc({
         id: "doc_" + Date.now() + "_" + Math.random().toString(36).slice(2),
         name: file.name,
-        mime: file.type,
+        mime,
         base64,
       });
     }
@@ -129,7 +130,7 @@ export default function EventInput({
           <input
             ref={docRef}
             type="file"
-            accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+            accept=".pdf,.ai,.doc,.docx,.ppt,.pptx,.txt"
             multiple
             className="hidden"
             onChange={(e) => { handleDocs(e.target.files); e.target.value = ""; }}

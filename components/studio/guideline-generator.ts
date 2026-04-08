@@ -197,7 +197,7 @@ export async function analyzeRefs(
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "gemini-3.1-flash-image-preview",
+      model: "gemini-2.5-flash",
       contents: [{ role: "user", parts }],
       generationConfig: { temperature: 0.3 },
     }),

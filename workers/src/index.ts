@@ -4,7 +4,7 @@ import { HTTPException } from "hono/http-exception";
 
 export interface Env {
   EPIC_DB: D1Database;
-  EPIC_STORAGE: R2Bucket;
+  EPIC_STORAGE?: R2Bucket;
   EPIC_KV: KVNamespace;
   GEMINI_API_KEY: string;
   OPENROUTER_API_KEY: string;
@@ -28,6 +28,8 @@ app.use(
       "http://localhost:5173",
       "http://localhost:3000",
       "https://epic-studio.epicstage.co.kr",
+      "https://epic-studio-cpb.pages.dev",
+      "https://studio.epicstage.co.kr",
     ],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],
@@ -52,7 +54,7 @@ app.post("/api/generate", async (c) => {
   const body = await c.req.json();
 
   const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${
-    body.model ?? "gemini-2.0-flash-exp-image-generation"
+    body.model ?? "gemini-3.1-flash-image-preview"
   }:generateContent?key=${apiKey}`;
 
   const response = await fetch(geminiUrl, {
@@ -291,7 +293,7 @@ app.post("/api/analyze/style", async (c) => {
           "HTTP-Referer": "https://epic-studio.epicstage.co.kr",
         },
         body: JSON.stringify({
-          model: "google/gemini-2.0-flash-001",
+          model: "google/gemini-3.1-flash-image-preview",
           messages: [{
             role: "user",
             content: [
@@ -458,7 +460,7 @@ Give specific, actionable design suggestions. Be concise.`;
       "X-Title": "Epic-Studio",
     },
     body: JSON.stringify({
-      model: "google/gemini-2.0-flash-001",
+      model: "google/gemini-2.5-flash",
       messages: chatMessages,
       temperature: 0.7,
       max_tokens: 1024,

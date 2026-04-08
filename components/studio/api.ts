@@ -1,4 +1,4 @@
-const API_BASE = "https://epic-studio-api.pd-302.workers.dev";
+import { API_BASE } from "./config";
 
 export async function searchReferences(query: string, eventType?: string, count = 12) {
   const resp = await fetch(`${API_BASE}/api/search/smart-references`, {
