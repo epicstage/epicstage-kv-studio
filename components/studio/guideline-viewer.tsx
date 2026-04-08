@@ -87,17 +87,146 @@ function InlineGuideImage({
   );
 }
 
-function ColorSwatch({ label, hex, usage }: { label: string; hex: string; usage: string }) {
+function ColorSwatch({
+  label, hex, usage, onChangeHex, onDelete,
+}: {
+  label: string; hex: string; usage: string;
+  onChangeHex: (hex: string) => void;
+  onDelete: () => void;
+}) {
   return (
-    <div className="flex items-center gap-3">
-      <div className="h-10 w-10 shrink-0 rounded-lg border border-gray-700" style={{ background: hex }} />
-      <div>
+    <div className="group flex items-center gap-3">
+      <label className="relative h-10 w-10 shrink-0 cursor-pointer rounded-lg border border-gray-700" style={{ background: hex }}>
+        <input
+          type="color"
+          value={hex}
+          onChange={(e) => onChangeHex(e.target.value)}
+          className="absolute inset-0 h-full w-full cursor-pointer opacity-0"
+        />
+      </label>
+      <div className="flex-1">
         <div className="flex items-center gap-2">
           <span className="text-xs font-medium text-gray-300">{label}</span>
-          <code className="text-[10px] text-indigo-400">{hex}</code>
+          <input
+            type="text"
+            value={hex}
+            onChange={(e) => {
+              let v = e.target.value;
+              if (v && !v.startsWith("#")) v = "#" + v;
+              if (/^#[0-9a-fA-F]{0,6}$/.test(v)) onChangeHex(v);
+            }}
+            className="w-20 rounded border border-gray-800 bg-gray-950 px-1.5 py-0.5 font-mono text-[10px] text-indigo-400 focus:border-indigo-500/50 focus:outline-none"
+          />
         </div>
         <div className="text-[10px] text-gray-500">{usage}</div>
       </div>
+      <button
+        onClick={onDelete}
+        className="rounded p-0.5 text-gray-700 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+        title="삭제"
+      >
+        <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
+      </button>
+    </div>
+  );
+}
+
+function ColorPaletteEditor({ version }: { version: Version }) {
+  const { updateColorPalette } = useStore();
+  const palette = version.guideline?.color_palette;
+  const [adding, setAdding] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [newHex, setNewHex] = useState("#000000");
+
+  if (!palette) return null;
+
+  const entries = Object.entries(palette);
+
+  function handleChangeHex(key: string, hex: string) {
+    const next = { ...palette, [key]: { ...palette[key], hex } };
+    updateColorPalette(version.id, next);
+  }
+
+  function handleDelete(key: string) {
+    const next = { ...palette };
+    delete next[key];
+    updateColorPalette(version.id, next);
+  }
+
+  function handleAdd() {
+    if (!newLabel.trim() || !newHex) return;
+    const key = newLabel.trim().toLowerCase().replace(/\s+/g, "_");
+    const next = { ...palette, [key]: { hex: newHex, usage: "" } };
+    updateColorPalette(version.id, next);
+    setNewLabel("");
+    setNewHex("#000000");
+    setAdding(false);
+  }
+
+  return (
+    <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-5">
+      <div className="mb-4 flex items-center justify-between">
+        <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-500">컬러 팔레트</h4>
+        <button
+          onClick={() => setAdding(!adding)}
+          className="rounded border border-gray-700 px-2 py-0.5 text-[10px] text-gray-500 hover:border-indigo-500/50 hover:text-indigo-400"
+        >
+          {adding ? "취소" : "+ 컬러 추가"}
+        </button>
+      </div>
+
+      {adding && (
+        <div className="mb-4 flex items-end gap-2 rounded-lg border border-gray-800 bg-gray-900/50 p-3">
+          <div className="flex-1">
+            <label className="mb-1 block text-[10px] text-gray-600">이름</label>
+            <input
+              value={newLabel}
+              onChange={(e) => setNewLabel(e.target.value)}
+              placeholder="예: accent_gold"
+              className="w-full rounded border border-gray-800 bg-gray-950 px-2 py-1 text-xs text-gray-300 focus:border-indigo-500/50 focus:outline-none"
+            />
+          </div>
+          <div>
+            <label className="mb-1 block text-[10px] text-gray-600">색상</label>
+            <div className="flex items-center gap-1.5">
+              <label className="relative h-7 w-7 cursor-pointer rounded border border-gray-700" style={{ background: newHex }}>
+                <input type="color" value={newHex} onChange={(e) => setNewHex(e.target.value)} className="absolute inset-0 h-full w-full cursor-pointer opacity-0" />
+              </label>
+              <input
+                value={newHex}
+                onChange={(e) => {
+                  let v = e.target.value;
+                  if (v && !v.startsWith("#")) v = "#" + v;
+                  if (/^#[0-9a-fA-F]{0,6}$/.test(v)) setNewHex(v);
+                }}
+                className="w-20 rounded border border-gray-800 bg-gray-950 px-1.5 py-1 font-mono text-[10px] text-indigo-400 focus:border-indigo-500/50 focus:outline-none"
+              />
+            </div>
+          </div>
+          <button
+            onClick={handleAdd}
+            disabled={!newLabel.trim()}
+            className="rounded bg-indigo-600 px-3 py-1 text-xs text-white hover:bg-indigo-500 disabled:opacity-50"
+          >
+            추가
+          </button>
+        </div>
+      )}
+
+      <div className="space-y-3">
+        {entries.map(([key, { hex, usage }]) => (
+          <ColorSwatch
+            key={key}
+            label={key}
+            hex={hex}
+            usage={usage}
+            onChangeHex={(h) => handleChangeHex(key, h)}
+            onDelete={() => handleDelete(key)}
+          />
+        ))}
+      </div>
+
+      <InlineGuideImage version={version} sectionKey="color_palette" />
     </div>
   );
 }
@@ -161,16 +290,8 @@ export default function GuidelineViewer({ version }: { version: Version }) {
         )}
       </div>
 
-      {/* Color palette */}
-      <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-5">
-        <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-500">컬러 팔레트</h4>
-        <div className="grid gap-4 sm:grid-cols-2">
-          {Object.entries(g.color_palette).map(([key, val]) => (
-            <ColorSwatch key={key} label={key} hex={val.hex} usage={val.usage} />
-          ))}
-        </div>
-        <InlineGuideImage version={version} sectionKey="color_palette" />
-      </div>
+      {/* Color palette — editable */}
+      <ColorPaletteEditor version={version} />
 
       {/* Mood */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-5">

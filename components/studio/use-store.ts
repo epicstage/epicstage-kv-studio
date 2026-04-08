@@ -94,6 +94,7 @@ interface StudioStore {
   setActiveVersion: (id: string) => void;
   selectVersionForStep3: (id: string) => void;
   setGuideImage: (verId: string, itemId: string, dataUrl: string) => void;
+  updateColorPalette: (verId: string, palette: Record<string, { hex: string; usage: string }>) => void;
 
   selectedItems: Set<number>;
   toggleItem: (idx: number) => void;
@@ -170,6 +171,14 @@ export const useStore = create<StudioStore>((set, get) => ({
     set((s) => ({
       versions: s.versions.map((v) =>
         v.id === verId ? { ...v, guideImages: { ...v.guideImages, [itemId]: dataUrl } } : v
+      ),
+    })),
+  updateColorPalette: (verId, palette) =>
+    set((s) => ({
+      versions: s.versions.map((v) =>
+        v.id === verId && v.guideline
+          ? { ...v, guideline: { ...v.guideline, color_palette: palette } }
+          : v
       ),
     })),
 
