@@ -4,7 +4,8 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "node -e \"if(process.env.CF_PAGES){require('fs').rmSync('app/api',{recursive:true,force:true});console.log('Removed app/api for static export')}\" && next build",
+    "build": "rm -rf app/api && next build",
+    "build:dev": "next build",
     "start": "next start",
     "lint": "next lint"
   },
