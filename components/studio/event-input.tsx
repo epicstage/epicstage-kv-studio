@@ -22,8 +22,9 @@ export default function EventInput({
   value: string;
   onChange: (v: string) => void;
 }) {
-  const { ciImages, addCiImage, removeCiImage, styleOverride, setStyleOverride } = useStore();
+  const { ciImages, addCiImage, removeCiImage, ciDocs, addCiDoc, removeCiDoc, styleOverride, setStyleOverride } = useStore();
   const fileRef = useRef<HTMLInputElement>(null);
+  const docRef = useRef<HTMLInputElement>(null);
 
   async function handleFiles(files: FileList | null) {
     if (!files) return;
@@ -33,6 +34,21 @@ export default function EventInput({
       const base64 = await fileToBase64(file);
       addCiImage({
         id: "ci_" + Date.now() + "_" + Math.random().toString(36).slice(2),
+        name: file.name,
+        mime: file.type,
+        base64,
+      });
+    }
+  }
+
+  async function handleDocs(files: FileList | null) {
+    if (!files) return;
+    const remaining = 5 - ciDocs.length;
+    const toProcess = Array.from(files).slice(0, remaining);
+    for (const file of toProcess) {
+      const base64 = await fileToBase64(file);
+      addCiDoc({
+        id: "doc_" + Date.now() + "_" + Math.random().toString(36).slice(2),
         name: file.name,
         mime: file.type,
         base64,
@@ -92,6 +108,49 @@ export default function EventInput({
                   className="absolute -right-1 -top-1 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-[10px] text-white opacity-0 transition-opacity group-hover:opacity-100"
                 >
                   x
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* CI Guide Docs */}
+      <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+        <h3 className="mb-3 font-nacelle text-sm font-semibold text-white">
+          CI 가이드 문서 <span className="text-gray-500 font-normal">PDF 등, 최대 5개 ({ciDocs.length}/5)</span>
+        </h3>
+
+        <label
+          className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-gray-700 bg-gray-950/50 px-4 py-4 text-sm text-gray-500 transition-colors hover:border-indigo-500/50 hover:text-gray-400"
+          onDrop={(e) => { e.preventDefault(); handleDocs(e.dataTransfer.files); }}
+          onDragOver={(e) => e.preventDefault()}
+        >
+          <input
+            ref={docRef}
+            type="file"
+            accept=".pdf,.doc,.docx,.ppt,.pptx,.txt"
+            multiple
+            className="hidden"
+            onChange={(e) => { handleDocs(e.target.files); e.target.value = ""; }}
+          />
+          클릭하거나 파일을 드롭 (PDF, PPT, DOC, TXT)
+        </label>
+
+        {ciDocs.length > 0 && (
+          <div className="mt-3 space-y-1.5">
+            {ciDocs.map((doc) => (
+              <div key={doc.id} className="group flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-950/50 px-3 py-2">
+                <span className="rounded bg-indigo-500/10 px-1.5 py-0.5 text-[10px] font-medium text-indigo-400">
+                  {doc.name.split(".").pop()?.toUpperCase()}
+                </span>
+                <span className="flex-1 truncate text-xs text-gray-400">{doc.name}</span>
+                <span className="text-[10px] text-gray-600">{(doc.base64.length * 0.75 / 1024).toFixed(0)}KB</span>
+                <button
+                  onClick={() => removeCiDoc(doc.id)}
+                  className="text-gray-600 opacity-0 transition-opacity hover:text-red-400 group-hover:opacity-100"
+                >
+                  <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
                 </button>
               </div>
             ))}

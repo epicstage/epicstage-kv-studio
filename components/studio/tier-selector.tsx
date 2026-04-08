@@ -30,7 +30,7 @@ export default function TierSelector({
             {tier.name}
           </div>
           <div className="mb-3 text-sm text-gray-500">{tier.desc}</div>
-          <div className="mb-3 font-nacelle text-sm font-semibold text-gray-600">
+          <div className="mb-3 font-nacelle text-sm font-semibold text-indigo-400">
             {tier.price}
           </div>
           <ul className="space-y-1">

@@ -61,22 +61,6 @@ export async function requestUpscale(file: Blob, scale = 4) {
   return resp.json();
 }
 
-export async function requestVectorize(file: Blob) {
-  const formData = new FormData();
-  formData.append("file", file, "image.png");
-  const resp = await fetch(`${API_BASE}/api/vectorize`, { method: "POST", body: formData });
-  if (!resp.ok) throw new Error(`Vectorize failed: ${resp.status}`);
-  return resp.json();
-}
-
-export async function requestLayerSeparation(file: Blob) {
-  const formData = new FormData();
-  formData.append("file", file, "image.png");
-  const resp = await fetch(`${API_BASE}/api/separate-layers`, { method: "POST", body: formData });
-  if (!resp.ok) throw new Error(`Layer separation failed: ${resp.status}`);
-  return resp.json();
-}
-
 export function imageUrl(key: string) {
   return `${API_BASE}/api/images/${encodeURIComponent(key)}`;
 }

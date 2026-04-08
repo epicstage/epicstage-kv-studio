@@ -1,26 +1,13 @@
-import type { Guideline, Version } from "./use-store";
+import type { Guideline, Version, ProductionPlanItem } from "./use-store";
+import { API_BASE, isLocal, CHAT_URL, IMAGE_URL } from "./config";
 
-const API_BASE = "https://epic-studio-api.pd-302.workers.dev";
+// ─── 시스템 인스트럭션 ────────────────────────────────────────────────────
 
-export async function generateGuideline(
-  eventInfo: string,
-  styleOverride: string,
-  existingTones: string[] = []
-): Promise<Guideline> {
-  const diversityHint =
-    existingTones.length > 0
-      ? `\n\n## 중요: 기존 버전들과 다른 방향\n기존 무드/톤: ${existingTones.join(", ")}\n→ 완전히 다른 컬러 팔레트, 무드, 스타일로 생성할 것.`
-      : "";
+const GUIDELINE_SYSTEM = `너는 행사 브랜딩 전문 디자이너야.
+사용자가 제공하는 행사 정보, CI 자료, 레퍼런스 분석, 스타일 지시를 바탕으로 디자인 가이드라인을 생성한다.
+반드시 아래 JSON 스키마에 맞춰 출력하고, JSON 외 다른 텍스트는 절대 포함하지 마라.
 
-  const prompt = `너는 행사 브랜딩 전문 디자이너야.
-아래 입력을 바탕으로 디자인 가이드라인을 JSON으로 생성해줘.
-
-## 행사 정보
-${eventInfo}
-${styleOverride ? `\n## 추가 스타일 지시\n${styleOverride}` : ""}
-${diversityHint}
-
-## 출력 형식 (JSON만, 다른 텍스트 금지)
+출력 스키마:
 {
   "event_summary": { "name": "", "name_en": "", "date": "", "venue": "", "organizer": "", "theme": "", "slogan": "" },
   "color_palette": {
@@ -48,68 +35,614 @@ ${diversityHint}
   ]
 }`;
 
-  const resp = await fetch(`${API_BASE}/api/chat`, {
+const GUIDE_IMAGE_SYSTEM =
+  "You are a brand design system specialist. You create professional visual references and design guide sheets for event branding systems. Always generate an IMAGE output.";
+
+const PRODUCTION_SYSTEM =
+  "You are a professional event graphic designer. Generate production-ready artwork based on the provided design system and specifications. Output only the image.";
+
+const PRINT_SPEC_INSTRUCTION =
+  "Production-ready print artwork for direct delivery to print vendor. Flat graphic design layout only. No 3D rendering, no environmental context, no mockup perspective, no scene background, no props. Output must be the actual artwork as it would appear on the final printed/produced item.";
+
+const PLAN_SYSTEM = `너는 행사 그래픽 디자인 전문가야.
+사용자가 제공하는 행사 개요, 디자인 가이드라인, 제작 목록을 바탕으로 각 제작물의 상세 생성 계획을 만든다.
+반드시 아래 JSON 스키마로만 출력하고, 다른 텍스트는 절대 포함하지 마라.
+
+출력 스키마:
+{
+  "outputs": [
+    {
+      "num": 1,
+      "name": "제작물 이름",
+      "ratio": "비율",
+      "headline": "메인 카피 (실제 행사 내용, 플레이스홀더 금지)",
+      "subtext": "서브 카피 (null 가능)",
+      "layout_note": "레이아웃 설명 (한국어)",
+      "image_prompt": "Gemini 이미지 생성 프롬프트 (영어, 상세하게. 디자인 시스템의 컬러·모티프·무드를 반영)"
+    }
+  ]
+}`;
+
+const NO_TEXT_SYSTEM =
+  "You are an image editor specializing in text removal. You preserve all visual elements — background, graphics, layout, colors, textures — while removing only text and typographic elements.";
+
+// ─── 아이템별 선택적 guideline 필드 추출 ─────────────────────────────────
+
+function extractGuideFieldsForItem(
+  guideline: Guideline,
+  itemId: string
+): Partial<Guideline> {
+  const g = guideline;
+  switch (itemId) {
+    case "color_palette_sheet":
+      return { color_palette: g.color_palette, mood: g.mood };
+    case "typography_sheet":
+      return {
+        typography: g.typography,
+        color_palette: {
+          primary: g.color_palette?.primary,
+          background: g.color_palette?.background,
+          text_dark: g.color_palette?.text_dark,
+        } as any,
+      };
+    case "motif_board":
+      return { graphic_motifs: g.graphic_motifs, color_palette: g.color_palette, mood: g.mood };
+    case "layout_sketches":
+      return {
+        layout_guide: g.layout_guide,
+        event_summary: { name: g.event_summary?.name, name_en: g.event_summary?.name_en } as any,
+      };
+    case "logo_usage_sheet":
+      return {
+        logo_usage: g.logo_usage,
+        color_palette: {
+          primary: g.color_palette?.primary,
+          background: g.color_palette?.background,
+        } as any,
+      };
+    case "mood_board":
+      return {
+        mood: g.mood,
+        color_palette: g.color_palette,
+        graphic_motifs: g.graphic_motifs,
+        event_summary: { name: g.event_summary?.name, theme: g.event_summary?.theme } as any,
+      };
+    default:
+      return {
+        color_palette: g.color_palette,
+        typography: g.typography,
+        graphic_motifs: g.graphic_motifs,
+        mood: g.mood,
+      };
+  }
+}
+
+// ─── 제작물용 디자인 시스템 추출 ────────────────────────────────────────────
+
+function findBestLayoutMatch(prodName: string, layoutGuide: Record<string, string>): string | null {
+  if (!layoutGuide) return null;
+  const name = prodName.toLowerCase();
+  const mapping: Record<string, string> = {
+    kv: "kv", 키비주얼: "kv",
+    현수막: "banner_horizontal", 배너: "banner_horizontal",
+    인스타: "sns_square", sns: "sns_square", 피드: "sns_square",
+    스토리: "sns_story",
+    무대: "stage_backdrop", 배경: "stage_backdrop",
+    입구: "entrance_banner", "x배너": "entrance_banner",
+    포토월: "photowall",
+  };
+  for (const [kw, key] of Object.entries(mapping)) {
+    if (name.includes(kw) && layoutGuide[key]) return key;
+  }
+  return null;
+}
+
+function extractDesignSystemForProduction(guideline: Guideline, prodName: string): string {
+  const g = guideline;
+  const c = g.color_palette || {};
+  const t = g.typography || {};
+  const m = g.graphic_motifs || {};
+  const mood = g.mood || {};
+  const event = g.event_summary || {};
+
+  const layoutKey = findBestLayoutMatch(prodName, g.layout_guide || {});
+  const layoutGuide = layoutKey ? g.layout_guide[layoutKey] : null;
+
+  const colorLine = Object.entries(c)
+    .filter(([, v]) => v?.hex)
+    .map(([k, v]) => `${k}: ${v.hex}`)
+    .join(", ");
+
+  return `EVENT: "${event.name}"${event.name_en ? ` / "${event.name_en}"` : ""}${event.date ? `, ${event.date}` : ""}${event.venue ? `, ${event.venue}` : ""}${event.organizer ? `, ${event.organizer}` : ""}${event.slogan ? ` — "${event.slogan}"` : ""}
+
+DESIGN SYSTEM:
+Colors — ${colorLine}
+Typography — Headline: ${t.headline?.font} ${t.headline?.size_range}, Sub: ${t.subheading?.font}, Body: ${t.body?.font}
+Style: ${m.style}${m.elements?.length ? `. Elements: ${m.elements.join(", ")}` : ""}${m.texture ? `. Texture: ${m.texture}` : ""}${m.icon_style ? `. Icons: ${m.icon_style}` : ""}
+Mood: ${mood.tone}${mood.keywords?.length ? ` (${mood.keywords.join(", ")})` : ""}
+${layoutGuide ? `Layout: ${layoutGuide}` : ""}
+${g.logo_usage ? `Logo: placement ${g.logo_usage.primary_placement || "auto"}, clear-space ${g.logo_usage.clear_space || "auto"}` : ""}`;
+}
+
+// ─── 레퍼런스 분석 ───────────────────────────────────────────────────────────
+
+const ANALYZE_REFS_SYSTEM = `너는 비주얼 디자인 분석 전문가야.
+첨부된 레퍼런스 이미지들의 공통 디자인 경향성을 JSON으로 추출한다.
+분석 항목: color_tendency, typography_tendency, layout_tendency, graphic_tendency, mood_tendency(키워드 3-5개), consistency_notes.
+JSON만 출력.`;
+
+export async function analyzeRefs(
+  images: Array<{ mime: string; base64: string }>
+): Promise<string> {
+  if (isLocal()) {
+    const resp = await fetch("/api/analyze-refs/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images }),
+    });
+    if (!resp.ok) throw new Error(`분석 실패: ${resp.status}`);
+    const data = await resp.json();
+    return typeof data.analysis === "object"
+      ? JSON.stringify(data.analysis, null, 2)
+      : data.analysis;
+  }
+
+  // prod: Worker의 generate 엔드포인트 직접 호출
+  const parts: any[] = images.slice(0, 8).map((img) => ({
+    inlineData: { mimeType: img.mime, data: img.base64 },
+  }));
+  parts.push({ text: `${ANALYZE_REFS_SYSTEM}\n\n${images.length}장의 레퍼런스 이미지를 분석해줘.` });
+
+  const resp = await fetch(`${API_BASE}/api/generate`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }],
+      model: "gemini-3.1-flash-image-preview",
+      contents: [{ role: "user", parts }],
+      generationConfig: { temperature: 0.3 },
+    }),
+  });
+  if (!resp.ok) throw new Error(`분석 실패: ${resp.status}`);
+  const data = await resp.json() as any;
+  const text: string = (data?.candidates?.[0]?.content?.parts ?? [])
+    .filter((p: any) => p.text)
+    .map((p: any) => p.text as string)
+    .join("");
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end !== -1) {
+    try { return JSON.stringify(JSON.parse(text.substring(start, end + 1)), null, 2); } catch {}
+  }
+  return text;
+}
+
+// ─── 스타일 지시 정제 ─────────────────────────────────────────────────────────
+
+/**
+ * 사용자의 자유 텍스트 스타일 지시를 순수 비주얼 디스크립션으로 변환.
+ * 고유명사(브로드웨이, 애플, 디즈니 등)를 시각적 속성으로 치환하여
+ * 이후 단계에서 리터럴 텍스트로 렌더링되는 것을 방지.
+ */
+export async function refineStyleOverride(raw: string): Promise<string> {
+  if (!raw.trim()) return raw;
+
+  const resp = await fetch(CHAT_URL(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system: `너는 디자인 스타일 번역기다.
+사용자가 제공하는 스타일 지시를 순수 시각적 묘사로 변환하라.
+규칙:
+- 고유명사(브랜드명, 지역명, 작품명 등)를 제거하고 해당 고유명사가 연상시키는 시각적 특성(색감, 조명, 질감, 구도, 타이포 스타일 등)으로 바꿀 것
+- 한국어로 출력
+- 변환 결과만 출력하고 다른 설명은 붙이지 말 것
+- 원문의 의도와 느낌을 최대한 살릴 것
+
+예시:
+입력: "브로드웨이 뮤지컬 느낌"
+출력: "화려한 무대 조명, 붉은 벨벳 질감, 금색 장식 악센트, 극적인 스포트라이트 연출, 클래식 세리프 타이포"
+
+입력: "애플 발표회 스타일"
+출력: "미니멀 다크 배경, 중앙 집중 조명, 넓은 여백, 산세리프 타이포, 차분한 그라데이션"
+
+입력: "지브리 애니메이션 같은"
+출력: "수채화 텍스처, 부드러운 파스텔톤, 자연광 느낌, 따뜻한 색감, 동화적 구도"`,
+      messages: [{ role: "user", content: raw }],
+    }),
+  });
+
+  if (!resp.ok) return raw; // 실패 시 원본 유지
+  const data = await resp.json();
+  return (data.reply ?? raw).trim();
+}
+
+// ─── API 호출 ───────────────────────────────────────────────────────────────
+
+/**
+ * 가이드라인 생성 — CI 이미지를 inlineData로 포함
+ */
+export async function generateGuideline(
+  eventInfo: string,
+  styleOverride: string,
+  existingTones: string[] = [],
+  refAnalysis?: string,
+  ciImages?: Array<{ mime: string; base64: string }>,
+  ciDocs?: Array<{ mime: string; base64: string; name: string }>
+): Promise<Guideline> {
+  const diversityHint =
+    existingTones.length > 0
+      ? `\n\n## 중요: 기존 버전들과 다른 방향\n기존 무드/톤: ${existingTones.join(", ")}\n→ 완전히 다른 컬러 팔레트, 무드, 스타일로 생성할 것.`
+      : "";
+
+  // 스타일 지시 정제 — 고유명사 → 비주얼 묘사
+  const refinedStyle = styleOverride ? await refineStyleOverride(styleOverride) : "";
+
+  const hasCi = ciImages && ciImages.length > 0;
+  const hasDocs = ciDocs && ciDocs.length > 0;
+  const dataSections = [`## 행사 정보\n${eventInfo}`];
+  if (refAnalysis) {
+    const refNote = hasCi
+      ? "CI 브랜드 아이덴티티를 우선하되, 아래 경향성을 분위기·레이아웃·스타일에 반영."
+      : "CI 없음. 아래 경향성을 가이드라인의 주요 소스로 활용.";
+    dataSections.push(`## 레퍼런스 경향성 분석\n${refNote}\n${refAnalysis}`);
+  }
+  if (refinedStyle) dataSections.push(`## 추가 스타일 지시\n${refinedStyle}`);
+  if (hasCi) dataSections.push(`## CI 이미지\n${ciImages!.length}장 첨부됨. 로고·컬러·스타일 분석하여 반영.`);
+  if (hasDocs) dataSections.push(`## CI 가이드 문서\n${ciDocs!.length}개 첨부됨. 문서의 브랜드 규정(컬러, 타이포, 레이아웃, 로고 사용법 등)을 분석하여 가이드라인에 반영.`);
+  if (diversityHint) dataSections.push(diversityHint);
+
+  const resp = await fetch(CHAT_URL(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system: GUIDELINE_SYSTEM,
+      messages: [{ role: "user", content: dataSections.join("\n\n") }],
+      ciImages: ciImages ?? [],
+      ciDocs: ciDocs ?? [],
     }),
   });
 
   if (!resp.ok) throw new Error(`Generate failed: ${resp.status}`);
   const data = await resp.json();
   const text = data.reply ?? "";
-
   return parseJSON(text);
 }
 
+/**
+ * 가이드 이미지 생성 — CI 이미지 포함, 항상 이미지 출력
+ */
 export async function generateGuideImage(
   guideline: Guideline,
-  item: { id: string; label: string; description: string }
+  item: { id: string; label: string; description: string },
+  refAnalysis?: string,
+  ciImages?: Array<{ mime: string; base64: string }>
 ): Promise<string> {
-  const prompt = `Create a professional design asset: "${item.label}"
+  const relevantFields = extractGuideFieldsForItem(guideline, item.id);
+
+  const userContent = `Create a visual reference for: "${item.label}"
 Description: ${item.description}
 
-Design context:
-${JSON.stringify(guideline, null, 2)}
+RELEVANT DESIGN DATA:
+${JSON.stringify(relevantFields, null, 2)}
+${refAnalysis ? `\nREFERENCE STYLE ANALYSIS (apply this direction):\n${refAnalysis}` : ""}
 
-Generate a clean, professional visual for this design guideline item.
-Return the image.`;
+INSTRUCTION:
+- Generate a clean, professional IMAGE for this design guideline item.
+- Clean white background, professional design guide style.
+- Aspect ratio: 4:3 horizontal
+- Always output as an IMAGE.`;
 
-  const resp = await fetch(`${API_BASE}/api/generate`, {
+  const url = IMAGE_URL();
+
+  let resp: Response;
+  if (isLocal()) {
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: userContent,
+        system: GUIDE_IMAGE_SYSTEM,
+        ciImages: ciImages ?? [],
+      }),
+    });
+  } else {
+    const parts: any[] = [];
+    (ciImages ?? []).slice(0, 3).forEach((img) => {
+      parts.push({ inlineData: { mimeType: img.mime, data: img.base64 } });
+    });
+    parts.push({ text: `${GUIDE_IMAGE_SYSTEM}\n\n---\n\n${userContent}` });
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gemini-3.1-flash-image-preview",
+        contents: [{ role: "user", parts }],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+      }),
+    });
+  }
+
+  if (!resp.ok) throw new Error(`Image gen failed: ${resp.status}`);
+  const data = await resp.json() as any;
+
+  if (isLocal()) {
+    if (data.error) throw new Error(data.error);
+    return data.imageUrl ?? "";
+  }
+
+  const resParts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = resParts.find((p: any) => p.inlineData);
+  if (!imagePart) throw new Error("이미지 미포함 응답");
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType};base64,${b64}`;
+}
+
+/**
+ * 제작 계획 생성 — headline, subtext, image_prompt per item
+ */
+export async function generateProductionPlan(
+  guideline: Guideline,
+  items: Array<{ num: number; name: string; ratio: string }>,
+  ciImages?: Array<{ mime: string; base64: string }>
+): Promise<ProductionPlanItem[]> {
+  const planData = {
+    event: guideline.event_summary,
+    design_system: {
+      color_palette: guideline.color_palette,
+      typography: guideline.typography,
+      graphic_motifs: guideline.graphic_motifs,
+      mood: guideline.mood,
+      layout_guide: guideline.layout_guide,
+    },
+    production_list: items,
+  };
+
+  const resp = await fetch(CHAT_URL(), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }],
+      system: PLAN_SYSTEM,
+      messages: [{ role: "user", content: JSON.stringify(planData, null, 2) }],
+      ciImages: ciImages ?? [],
     }),
   });
 
-  if (!resp.ok) throw new Error(`Image gen failed: ${resp.status}`);
+  if (!resp.ok) throw new Error(`Plan failed: ${resp.status}`);
   const data = await resp.json();
+  const text = data.reply ?? "";
+  const plan = parseJSON(text);
+  return (plan as any).outputs ?? [];
+}
 
-  // OpenRouter returns choices[].message.content
-  const content = data.choices?.[0]?.message?.content ?? "";
-  return content;
+/**
+ * 제작물 이미지 생성 — 상세 프롬프트 (headline, subtext, PRINT_SPEC 포함)
+ */
+export async function generateProductionImage(
+  guideline: Guideline,
+  prod: {
+    name: string;
+    ratio: string;
+    category: string;
+    headline?: string;
+    subtext?: string | null;
+    layoutNote?: string;
+    imagePrompt?: string;
+    renderInstruction?: string;
+  },
+  ciImages?: Array<{ mime: string; base64: string }>,
+  guideImages?: Record<string, string>,
+  refAnalysis?: string
+): Promise<string> {
+  const designSystem = extractDesignSystemForProduction(guideline, prod.name);
+
+  // 렌더링할 텍스트 목록
+  const textLines: string[] = [];
+  if (prod.headline) textLines.push(`- HEADLINE: "${prod.headline}"`);
+  if (prod.subtext) textLines.push(`- SUBTEXT: "${prod.subtext}"`);
+
+  const userContent = `Professional event graphic design. Production-ready.
+Aspect ratio: ${prod.ratio}.
+Type: ${prod.name}
+
+${designSystem}
+
+=== TEXTS TO RENDER ===
+Render ONLY these exact strings as visible text in the image.
+Do NOT add, modify, or render any other text beyond this list.
+${textLines.length > 0 ? textLines.join("\n") : "(no text — visual only)"}
+
+=== VISUAL STYLE (DO NOT RENDER AS TEXT) ===
+The following describes visual mood, composition, and style only.
+These words must NEVER appear as readable text in the image.
+${prod.imagePrompt || ""}
+${prod.layoutNote ? `Layout: ${prod.layoutNote}` : ""}
+${refAnalysis ? `Reference direction: ${refAnalysis}` : ""}
+
+RENDERING:
+${PRINT_SPEC_INSTRUCTION}${prod.renderInstruction ? "\n" + prod.renderInstruction : ""}
+
+REQUIREMENTS:
+- Render ONLY the text listed in TEXTS TO RENDER — nothing else as text
+- Text must be legible with proper hierarchy
+- Professional print/digital quality
+- No placeholder text
+- Match the design system precisely`;
+
+  const url = IMAGE_URL();
+  const guideImageUrls = guideImages ? Object.values(guideImages).filter(Boolean) : [];
+
+  let resp: Response;
+  if (isLocal()) {
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: userContent,
+        system: PRODUCTION_SYSTEM,
+        ciImages: ciImages ?? [],
+        guideImageUrls,
+      }),
+    });
+  } else {
+    const parts: any[] = [];
+    (ciImages ?? []).slice(0, 3).forEach((img) => {
+      parts.push({ inlineData: { mimeType: img.mime, data: img.base64 } });
+    });
+    guideImageUrls.slice(0, 4).forEach((dataUrl) => {
+      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+      if (match) parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
+    });
+    parts.push({ text: `${PRODUCTION_SYSTEM}\n\n---\n\n${userContent}` });
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gemini-3.1-flash-image-preview",
+        contents: [{ role: "user", parts }],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+      }),
+    });
+  }
+
+  if (!resp.ok) throw new Error(`이미지 생성 실패: ${resp.status}`);
+  const data = await resp.json() as any;
+
+  if (isLocal()) {
+    if (data.error) throw new Error(data.error);
+    return data.imageUrl ?? "";
+  }
+
+  const resParts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = resParts.find((p: any) => p.inlineData);
+  if (!imagePart) throw new Error("이미지 미포함 응답");
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType};base64,${b64}`;
+}
+
+/**
+ * 대지(No-text) 버전 생성 — multi-turn으로 텍스트 제거
+ */
+export async function generateNoTextVersion(
+  originalImageUrl: string,
+  originalPrompt: string,
+  thoughtSignature?: string
+): Promise<{ imageUrl: string; thoughtSignature?: string }> {
+  const url = IMAGE_URL();
+  const removeTextPrompt = `Remove ALL text, typography, labels, captions, headlines, logos with text, and any written characters from the image. Keep the entire background, graphic elements, layout composition, colors, shapes, textures, and decorative elements completely identical. Return only the background/canvas version with zero text.`;
+
+  // Extract base64 from data URL
+  const match = originalImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error("Invalid image data URL");
+  const [, imgMime, imgData] = match;
+
+  if (isLocal()) {
+    const resp = await fetch("/api/generate-notext/", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        originalPrompt,
+        imageMime: imgMime,
+        imageBase64: imgData,
+        thoughtSignature,
+        removeTextPrompt,
+        system: NO_TEXT_SYSTEM,
+      }),
+    });
+    if (!resp.ok) throw new Error(`No-text failed: ${resp.status}`);
+    const data = await resp.json() as any;
+    if (data.error) throw new Error(data.error);
+    return { imageUrl: data.imageUrl, thoughtSignature: data.thoughtSignature };
+  }
+
+  // prod: multi-turn direct
+  const history: any[] = [
+    { role: "user", parts: [{ text: originalPrompt }] },
+    {
+      role: "model",
+      parts: [
+        ...(thoughtSignature ? [{ thoughtSignature }] : []),
+        { inlineData: { mimeType: imgMime, data: imgData } },
+      ],
+    },
+  ];
+
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gemini-3.1-flash-image-preview",
+      contents: [...history, { role: "user", parts: [{ text: removeTextPrompt }] }],
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+      system: NO_TEXT_SYSTEM,
+    }),
+  });
+
+  if (!resp.ok) throw new Error(`대지 생성 실패: ${resp.status}`);
+  const data = await resp.json() as any;
+  const resParts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = resParts.find((p: any) => p.inlineData);
+  if (!imagePart) throw new Error("대지 이미지 미생성");
+  const newThought = resParts.find((p: any) => p.thoughtSignature)?.thoughtSignature;
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return {
+    imageUrl: `data:${mimeType};base64,${b64}`,
+    thoughtSignature: newThought,
+  };
+}
+
+// ─── 유틸 ────────────────────────────────────────────────────────────────────
+
+function repairJSON(json: string): any {
+  const stack: string[] = [];
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < json.length; i++) {
+    const c = json[i];
+    if (escape) { escape = false; continue; }
+    if (c === "\\") { escape = true; continue; }
+    if (c === '"') { inString = !inString; continue; }
+    if (inString) continue;
+    if (c === "{" || c === "[") stack.push(c);
+    else if (c === "}" || c === "]") stack.pop();
+  }
+
+  let repaired = json.replace(/,\s*$/, "");
+  for (let i = stack.length - 1; i >= 0; i--) {
+    repaired += stack[i] === "{" ? "}" : "]";
+  }
+  return JSON.parse(repaired);
 }
 
 function parseJSON(text: string): Guideline {
-  // Strip markdown code fences
   let cleaned = text.replace(/```json?\n?/g, "").replace(/\n?```/g, "").trim();
   const start = cleaned.indexOf("{");
+  if (start === -1) throw new Error("JSON 구조를 찾을 수 없습니다");
+
   const end = cleaned.lastIndexOf("}");
-  if (start === -1 || end === -1) throw new Error("JSON 구조를 찾을 수 없습니다");
-  cleaned = cleaned.substring(start, end + 1).replace(/,\s*([}\]])/g, "$1");
-  return JSON.parse(cleaned);
+  const candidate = end !== -1
+    ? cleaned.substring(start, end + 1).replace(/,\s*([}\]])/g, "$1")
+    : cleaned.substring(start);
+
+  try {
+    return JSON.parse(candidate);
+  } catch {
+    return repairJSON(cleaned.substring(start).replace(/,\s*([}\]])/g, "$1"));
+  }
 }
 
 export function createVersion(num: number, guideline: Guideline): Version {
   return {
-    id: "ver_" + Date.now(),
+    id: "ver_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
     num,
     label: `Ver.${num}`,
     guideline,
     preview: {
-      colors: Object.values(guideline.color_palette || {}).slice(0, 4).map((c) => c.hex).filter(Boolean),
+      colors: Object.values(guideline.color_palette || {})
+        .slice(0, 4)
+        .map((c: any) => c.hex)
+        .filter(Boolean),
       mood: guideline.mood?.keywords?.slice(0, 3) || [],
       tone: guideline.mood?.tone || "",
     },
