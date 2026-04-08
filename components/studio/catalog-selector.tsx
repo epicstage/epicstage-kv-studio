@@ -5,7 +5,7 @@ import { useStore } from "./use-store";
 import { MASTER_CATALOG, CATEGORIES } from "./constants";
 
 export default function CatalogSelector() {
-  const { selectedItems, toggleItem, selectAllItems, deselectAllItems } = useStore();
+  const { selectedItems, toggleItem, selectAllItems, deselectAllItems, setStep } = useStore();
   const [category, setCategory] = useState("전체");
   const [showCustom, setShowCustom] = useState(false);
   const [customName, setCustomName] = useState("");
@@ -149,11 +149,8 @@ export default function CatalogSelector() {
       </div>
 
       {selectedItems.size > 0 && (
-        <div className="mt-4 flex items-center justify-between border-t border-gray-800 pt-4">
+        <div className="mt-4 border-t border-gray-800 pt-3">
           <span className="text-xs text-gray-500">{selectedItems.size}종 선택됨</span>
-          <button className="rounded-lg bg-gradient-to-t from-indigo-600 to-indigo-500 px-6 py-2 text-sm font-medium text-white shadow-[inset_0px_1px_0px_0px_theme(colors.white/.16)] hover:bg-[length:100%_150%]">
-            제작물 이미지 생성 →
-          </button>
         </div>
       )}
     </div>

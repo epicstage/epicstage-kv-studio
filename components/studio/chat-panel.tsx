@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { sendChat } from "./api";
+import { useStore } from "./use-store";
+import { CHAT_URL } from "./config";
 
 interface Message {
   role: "user" | "assistant";
@@ -27,7 +28,30 @@ export default function ChatPanel({ guideline }: { guideline?: any }) {
     setLoading(true);
 
     try {
-      const data = await sendChat(newMessages, { guideline });
+      const system = guideline
+        ? `너는 행사 브랜딩 디자인 어시스턴트야. 아래는 현재 디자인 가이드라인이다. 사용자의 질문에 이 가이드라인을 참고해서 답하라.\n\n${JSON.stringify(guideline, null, 2)}`
+        : "너는 행사 브랜딩 디자인 어시스턴트야.";
+
+      const { ciImages } = useStore.getState();
+      const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
+
+      const chatMessages = newMessages.map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      }));
+
+      const resp = await fetch(CHAT_URL(), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          system,
+          messages: chatMessages,
+          ciImages: ci,
+        }),
+      });
+
+      if (!resp.ok) throw new Error(`Chat failed: ${resp.status}`);
+      const data = await resp.json();
       setMessages([...newMessages, { role: "assistant", content: data.reply }]);
     } catch (err: any) {
       setMessages([
