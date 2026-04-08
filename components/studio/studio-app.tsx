@@ -10,6 +10,7 @@ import ChatPanel from "./chat-panel";
 import GuidelineViewer from "./guideline-viewer";
 import CatalogSelector from "./catalog-selector";
 import ProductionGrid from "./production-grid";
+import { useState } from "react";
 
 export default function StudioApp() {
   const {
@@ -19,7 +20,10 @@ export default function StudioApp() {
     versions, activeVersionId, selectedVersionId,
     addVersion, setActiveVersion, selectVersionForStep3,
     isProcessing, setProcessing, addLog,
+    refAnalysis,
   } = useStore();
+
+  const [generateError, setGenerateError] = useState("");
 
   const activeVersion = versions.find((v) => v.id === activeVersionId);
   const confirmedVersion = versions.find((v) => v.id === selectedVersionId);
@@ -27,17 +31,41 @@ export default function StudioApp() {
   async function handleGenerate() {
     if (!eventInfo.trim()) return;
     setProcessing(true);
+    setGenerateError("");
     addLog(`Ver.${versions.length + 1} 가이드라인 생성 중...`);
 
     try {
+      // 레퍼런스 분석 (업로드 이미지 있고 아직 분석 안 됐으면 자동 실행)
+      const { ciImages, refFiles, refAnalysis: currentAnalysis, setRefAnalysis } = useStore.getState();
+      let analysis = currentAnalysis;
+      if (refFiles.length > 0 && !analysis) {
+        addLog("레퍼런스 이미지 분석 중...");
+        const resp = await fetch("/api/analyze-refs/", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ images: refFiles.map((f) => ({ mime: f.mime, base64: f.base64 })) }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          analysis = typeof data.analysis === "object" ? JSON.stringify(data.analysis, null, 2) : data.analysis;
+          setRefAnalysis(analysis);
+          addLog("레퍼런스 분석 완료", "ok");
+        }
+      }
+
       const existingTones = versions.map((v) => v.guideline?.mood?.tone).filter(Boolean);
-      const guideline = await generateGuideline(eventInfo, styleOverride, existingTones);
+      const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
+      const { ciDocs } = useStore.getState();
+      const docs = ciDocs.map((d) => ({ mime: d.mime, base64: d.base64, name: d.name }));
+      const guideline = await generateGuideline(eventInfo, styleOverride, existingTones, analysis || undefined, ci, docs);
       const version = createVersion(versions.length + 1, guideline);
       addVersion(version);
       addLog(`Ver.${version.num} 생성 완료 — "${guideline.event_summary.name}"`, "ok");
       setStep(2);
     } catch (err: any) {
-      addLog(`생성 실패: ${err.message}`, "err");
+      const msg = err.message || "알 수 없는 오류";
+      setGenerateError(msg);
+      addLog(`생성 실패: ${msg}`, "err");
     }
 
     setProcessing(false);
@@ -71,35 +99,35 @@ export default function StudioApp() {
 
       {/* Step 1: Input */}
       {step === 1 && (
-        <div className="space-y-6">
+        <div className="space-y-5">
           <TierSelector selected={tier} onSelect={setTier} />
 
-          <div className="grid gap-6 lg:grid-cols-2">
-            <div className="space-y-6">
-              <EventInput value={eventInfo} onChange={setEventInfo} />
-              <ReferenceSearch selectedRefs={selectedRefs} onSelectRef={toggleRef} />
-            </div>
-
-            <div className="space-y-6">
-              <ChatPanel guideline={activeVersion?.guideline} />
-
-              <button
-                onClick={handleGenerate}
-                disabled={isProcessing || !eventInfo.trim()}
-                className="btn group w-full bg-gradient-to-t from-indigo-600 to-indigo-500 bg-[length:100%_100%] bg-[bottom] py-3 text-white shadow-[inset_0px_1px_0px_0px_theme(colors.white/.16)] hover:bg-[length:100%_150%] disabled:opacity-50"
-              >
-                <span className="relative inline-flex items-center">
-                  {isProcessing ? (
-                    "생성 중..."
-                  ) : versions.length === 0 ? (
-                    <>가이드라인 생성 <span className="ml-1 text-white/50">-&gt;</span></>
-                  ) : (
-                    <>새 버전 생성 <span className="ml-1 text-white/50">+</span></>
-                  )}
-                </span>
-              </button>
-            </div>
+          <div className="grid gap-5 lg:grid-cols-2">
+            <EventInput value={eventInfo} onChange={setEventInfo} />
+            <ReferenceSearch selectedRefs={selectedRefs} onSelectRef={toggleRef} />
           </div>
+
+          {/* Generate button — full width, bottom */}
+          <button
+            onClick={handleGenerate}
+            disabled={isProcessing || !eventInfo.trim()}
+            className="btn group w-full rounded-xl bg-gradient-to-t from-indigo-600 to-indigo-500 bg-[length:100%_100%] bg-[bottom] py-4 text-base font-semibold text-white shadow-[inset_0px_1px_0px_0px_theme(colors.white/.16)] hover:bg-[length:100%_150%] disabled:opacity-50 sm:py-5 sm:text-lg"
+          >
+            <span className="relative inline-flex items-center">
+              {isProcessing ? (
+                "가이드라인 생성 중..."
+              ) : versions.length === 0 ? (
+                <>가이드라인 생성 <span className="ml-2 text-white/50">&rarr;</span></>
+              ) : (
+                <>새 버전 생성 <span className="ml-2 text-white/50">+</span></>
+              )}
+            </span>
+          </button>
+          {generateError && (
+            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-400">
+              {generateError}
+            </div>
+          )}
         </div>
       )}
 
@@ -148,15 +176,12 @@ export default function StudioApp() {
 
               {/* Active version viewer */}
               {activeVersion && (
-                <div className="grid gap-6 lg:grid-cols-3">
-                  <div className="lg:col-span-2">
-                    <GuidelineViewer version={activeVersion} />
-                  </div>
-
-                  <div className="space-y-4">
+                <div className="space-y-6">
+                  {/* 상단 액션 바 */}
+                  <div className="flex flex-wrap items-center gap-3">
                     <button
                       onClick={() => selectVersionForStep3(activeVersion.id)}
-                      className={`w-full rounded-xl border px-4 py-3 text-sm font-medium transition-all ${
+                      className={`rounded-xl border px-5 py-2.5 text-sm font-medium transition-all ${
                         selectedVersionId === activeVersion.id
                           ? "border-emerald-500/50 bg-emerald-500/10 text-emerald-400"
                           : "border-gray-800 text-gray-400 hover:border-indigo-500/50 hover:text-indigo-400"
@@ -164,44 +189,31 @@ export default function StudioApp() {
                     >
                       {selectedVersionId === activeVersion.id ? "✓ Step 3 확정됨" : "이 버전으로 Step 3 확정"}
                     </button>
-
                     {selectedVersionId && (
                       <button
                         onClick={() => setStep(3)}
-                        className="btn w-full bg-gradient-to-t from-indigo-600 to-indigo-500 py-3 text-white"
+                        className="btn bg-gradient-to-t from-indigo-600 to-indigo-500 px-6 py-2.5 text-sm text-white"
                       >
                         Step 3: 제작물 생성 →
                       </button>
                     )}
-
-                    {/* PDF export */}
                     <button
                       onClick={() => generateGuidelinePdf(
                         activeVersion.guideline,
-                        activeVersion.guideline.event_summary?.name || "가이드라인"
+                        activeVersion.guideline.event_summary?.name || "가이드라인",
+                        activeVersion.guideImages
                       )}
-                      className="w-full rounded-xl border border-gray-800 px-4 py-3 text-sm text-gray-400 transition-all hover:border-gray-700 hover:text-gray-300"
+                      className="rounded-xl border border-gray-800 px-5 py-2.5 text-sm text-gray-400 hover:border-gray-700 hover:text-gray-300"
                     >
                       PDF 내보내기
                     </button>
-
-                    {/* Mood keywords */}
-                    <div className="rounded-lg border border-gray-800 p-3">
-                      <div className="mb-2 text-[10px] uppercase tracking-wider text-gray-600">미리보기</div>
-                      <div className="flex flex-wrap gap-1">
-                        {activeVersion.preview.mood.map((m) => (
-                          <span key={m} className="rounded-full bg-gray-800 px-2 py-0.5 text-[10px] text-gray-400">
-                            {m}
-                          </span>
-                        ))}
-                      </div>
-                      <div className="mt-2 flex gap-1">
-                        {activeVersion.preview.colors.map((c, i) => (
-                          <span key={i} className="inline-block h-6 w-6 rounded" style={{ background: c }} />
-                        ))}
-                      </div>
-                    </div>
                   </div>
+
+                  {/* 가이드라인 뷰어 — 전체 너비 */}
+                  <GuidelineViewer version={activeVersion} />
+
+                  {/* AI 어시스턴트 */}
+                  <ChatPanel guideline={activeVersion.guideline} />
                 </div>
               )}
             </>

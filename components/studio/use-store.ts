@@ -22,6 +22,16 @@ export interface Version {
   guideImages: Record<string, string>; // id → base64 data URL
 }
 
+export interface ProductionPlanItem {
+  num: number;
+  name: string;
+  ratio: string;
+  headline: string;
+  subtext: string | null;
+  layout_note: string;
+  image_prompt: string;
+}
+
 export interface Production {
   id: string;
   name: string;
@@ -30,6 +40,18 @@ export interface Production {
   status: "pending" | "generating" | "done" | "error";
   imageUrl?: string;
   error?: string;
+  headline?: string;
+  subtext?: string | null;
+  layoutNote?: string;
+  imagePrompt?: string;
+  renderInstruction?: string;
+  fullPrompt?: string;
+  // no-text version
+  noTextStatus?: "pending" | "generating" | "done" | "error";
+  noTextUrl?: string;
+  noTextError?: string;
+  noTextThoughtSignature?: string;
+  // upscale
   upscaleStatus?: "pending" | "done" | "error";
   upscaleUrl?: string;
 }
@@ -49,8 +71,21 @@ interface StudioStore {
   addCiImage: (img: { id: string; name: string; mime: string; base64: string }) => void;
   removeCiImage: (id: string) => void;
 
+  ciDocs: Array<{ id: string; name: string; mime: string; base64: string }>;
+  addCiDoc: (doc: { id: string; name: string; mime: string; base64: string }) => void;
+  removeCiDoc: (id: string) => void;
+
   selectedRefs: string[];
   toggleRef: (url: string) => void;
+
+  // 직접 업로드한 레퍼런스 이미지
+  refFiles: Array<{ id: string; name: string; mime: string; base64: string }>;
+  addRefFile: (f: { id: string; name: string; mime: string; base64: string }) => void;
+  removeRefFile: (id: string) => void;
+
+  // Gemini 분석 결과
+  refAnalysis: string;
+  setRefAnalysis: (v: string) => void;
 
   versions: Version[];
   activeVersionId: string | null;
@@ -64,6 +99,9 @@ interface StudioStore {
   toggleItem: (idx: number) => void;
   selectAllItems: () => void;
   deselectAllItems: () => void;
+
+  productionPlan: ProductionPlanItem[] | null;
+  setProductionPlan: (p: ProductionPlanItem[] | null) => void;
 
   productions: Production[];
   setProductions: (p: Production[]) => void;
@@ -96,6 +134,10 @@ export const useStore = create<StudioStore>((set, get) => ({
   addCiImage: (img) => set((s) => ({ ciImages: [...s.ciImages, img] })),
   removeCiImage: (id) => set((s) => ({ ciImages: s.ciImages.filter((i) => i.id !== id) })),
 
+  ciDocs: [],
+  addCiDoc: (doc) => set((s) => ({ ciDocs: [...s.ciDocs, doc] })),
+  removeCiDoc: (id) => set((s) => ({ ciDocs: s.ciDocs.filter((d) => d.id !== id) })),
+
   selectedRefs: [],
   toggleRef: (url) =>
     set((s) => ({
@@ -104,12 +146,19 @@ export const useStore = create<StudioStore>((set, get) => ({
         : [...s.selectedRefs, url],
     })),
 
+  refFiles: [],
+  addRefFile: (f) => set((s) => ({ refFiles: [...s.refFiles, f] })),
+  removeRefFile: (id) => set((s) => ({ refFiles: s.refFiles.filter((f) => f.id !== id) })),
+
+  refAnalysis: "",
+  setRefAnalysis: (v) => set({ refAnalysis: v }),
+
   versions: [],
   activeVersionId: null,
   selectedVersionId: null,
   addVersion: (v) =>
     set((s) => ({
-      versions: [...s.versions, v],
+      versions: s.versions.some((ev) => ev.id === v.id) ? s.versions : [...s.versions, v],
       activeVersionId: v.id,
     })),
   setActiveVersion: (id) => set({ activeVersionId: id }),
@@ -134,6 +183,9 @@ export const useStore = create<StudioStore>((set, get) => ({
     }),
   selectAllItems: () => set({ selectedItems: new Set(Array.from({ length: 55 }, (_, i) => i)) }),
   deselectAllItems: () => set({ selectedItems: new Set() }),
+
+  productionPlan: null,
+  setProductionPlan: (p) => set({ productionPlan: p }),
 
   productions: [],
   setProductions: (p) => set({ productions: p }),
