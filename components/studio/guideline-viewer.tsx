@@ -53,34 +53,33 @@ function InlineGuideImage({
   }
 
   return (
-    <div className="mt-4 rounded-lg border border-gray-800 overflow-hidden">
-      {imageUrl ? (
-        <div className="relative group">
+    <div className="mt-4 space-y-2">
+      {/* 재생성 버튼 — 이미지 위에 항상 표시 */}
+      <div className="flex items-center gap-2">
+        {imageUrl ? (
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="rounded-lg border border-indigo-500/30 bg-indigo-500/10 px-3 py-1.5 text-xs font-medium text-indigo-400 transition-colors hover:bg-indigo-500/20 disabled:opacity-50"
+          >
+            {loading ? "재생성 중..." : "🔄 이미지 재생성"}
+          </button>
+        ) : (
+          <button
+            onClick={handleGenerate}
+            disabled={loading}
+            className="rounded-lg border border-gray-700 px-3 py-1.5 text-xs text-gray-400 transition-colors hover:border-indigo-500/50 hover:text-indigo-400 disabled:opacity-50"
+          >
+            {loading ? "생성 중..." : "예시 이미지 생성"}
+          </button>
+        )}
+        {error && <span className="text-[10px] text-red-400">{error}</span>}
+      </div>
+
+      {/* 이미지 */}
+      {imageUrl && (
+        <div className="rounded-lg border border-gray-800 overflow-hidden">
           <img src={imageUrl} alt={item.label} className="w-full" />
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/60 transition-opacity">
-            <button
-              onClick={handleGenerate}
-              disabled={loading}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-xs text-white hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {loading ? "재생성 중..." : "재생성"}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between bg-gray-900/60 px-4 py-3">
-          <span className="text-xs text-gray-500">{item.description}</span>
-          {loading ? (
-            <span className="animate-pulse text-xs text-indigo-400">생성 중...</span>
-          ) : (
-            <button
-              onClick={handleGenerate}
-              className="rounded border border-gray-700 px-3 py-1 text-xs text-gray-400 hover:border-indigo-500/50 hover:text-indigo-400"
-            >
-              예시 이미지 생성
-            </button>
-          )}
-          {error && <span className="ml-2 text-[10px] text-red-400">{error}</span>}
         </div>
       )}
     </div>

@@ -591,6 +591,122 @@ export async function generateNoTextVersion(
   };
 }
 
+// ─── 가이드라인 수정 (대화 기반) ────────────────────────────────────────────
+
+const MODIFY_SYSTEM = `너는 행사 브랜딩 가이드라인 수정 전문가야.
+사용자의 수정 요청을 반영해서 가이드라인 JSON을 수정한다.
+
+규칙:
+1. 수정이 필요한 필드만 변경하고, 나머지는 그대로 유지
+2. 반드시 JSON만 출력 (다른 텍스트 금지)
+3. 입력으로 주어진 JSON의 구조를 그대로 유지
+4. 수정 사항을 정확히 반영`;
+
+/**
+ * 가이드라인 일부 필드를 대화 기반으로 수정.
+ * targetFields가 주어지면 해당 필드만 추출해서 Gemini에 전송하고,
+ * 수정된 결과를 같은 필드 키로 반환.
+ */
+export async function modifyGuideline(
+  guideline: Guideline,
+  userRequest: string,
+  targetFields?: string[]
+): Promise<{ modified: Partial<Guideline>; explanation: string }> {
+  const fieldsToSend: Record<string, any> = {};
+  if (targetFields && targetFields.length > 0) {
+    for (const key of targetFields) {
+      if ((guideline as any)[key] !== undefined) {
+        fieldsToSend[key] = (guideline as any)[key];
+      }
+    }
+  } else {
+    Object.assign(fieldsToSend, guideline);
+  }
+
+  const resp = await fetch(CHAT_URL(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      system: MODIFY_SYSTEM,
+      messages: [
+        {
+          role: "user",
+          content: `현재 가이드라인:\n${JSON.stringify(fieldsToSend, null, 2)}\n\n수정 요청: ${userRequest}\n\n위 JSON을 수정 요청에 맞게 수정해서 JSON만 출력해줘.`,
+        },
+      ],
+    }),
+  });
+
+  if (!resp.ok) throw new Error(`수정 실패: ${resp.status}`);
+  const data = await resp.json();
+  const text = data.reply ?? "";
+
+  // JSON 파싱
+  const cleaned = text.replace(/```json?\n?/g, "").replace(/\n?```/g, "").trim();
+  const start = cleaned.indexOf("{");
+  const end = cleaned.lastIndexOf("}");
+  if (start === -1 || end === -1) throw new Error("수정 결과를 파싱할 수 없습니다");
+
+  let modified: Partial<Guideline>;
+  try {
+    modified = JSON.parse(cleaned.substring(start, end + 1).replace(/,\s*([}\]])/g, "$1"));
+  } catch {
+    modified = repairJSON(cleaned.substring(start).replace(/,\s*([}\]])/g, "$1"));
+  }
+
+  return { modified, explanation: "" };
+}
+
+/**
+ * 가이드 이미지를 multi-turn으로 수정 (기존 이미지 기반).
+ * 텍스트 깨짐 가능성 있음.
+ */
+export async function modifyGuideImageMultiTurn(
+  originalImageUrl: string,
+  modificationRequest: string
+): Promise<string> {
+  const match = originalImageUrl.match(/^data:([^;]+);base64,(.+)$/);
+  if (!match) throw new Error("Invalid image data URL");
+  const [, imgMime, imgData] = match;
+
+  const url = IMAGE_URL();
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gemini-3.1-flash-image-preview",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { inlineData: { mimeType: imgMime, data: imgData } },
+            { text: `이 디자인 가이드 이미지를 다음과 같이 수정해줘: ${modificationRequest}\n\n기존 레이아웃과 구조를 최대한 유지하면서 수정 사항만 반영해.` },
+          ],
+        },
+      ],
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+    }),
+  });
+
+  if (!resp.ok) throw new Error(`이미지 수정 실패: ${resp.status}`);
+  const data = await resp.json() as any;
+  const resParts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = resParts.find((p: any) => p.inlineData);
+  if (!imagePart) throw new Error("수정된 이미지가 생성되지 않았습니다");
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType};base64,${b64}`;
+}
+
+// 가이드 항목 ID → 관련 가이드라인 필드 매핑 (외부에서도 사용)
+export const GUIDE_ITEM_FIELDS: Record<string, string[]> = {
+  color_palette_sheet: ["color_palette", "mood"],
+  typography_sheet: ["typography", "color_palette"],
+  motif_board: ["graphic_motifs", "color_palette", "mood"],
+  layout_sketches: ["layout_guide", "event_summary"],
+  logo_usage_sheet: ["logo_usage", "color_palette"],
+  mood_board: ["mood", "color_palette", "graphic_motifs", "event_summary"],
+};
+
 // ─── 유틸 ────────────────────────────────────────────────────────────────────
 
 function repairJSON(json: string): any {

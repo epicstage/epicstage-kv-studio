@@ -56,6 +56,15 @@ export interface Production {
   upscaleUrl?: string;
 }
 
+export interface GuidelineSnapshot {
+  id: string;
+  timestamp: string;
+  versionId: string;
+  guideline: Guideline;
+  guideImages: Record<string, string>;
+  description: string;
+}
+
 interface StudioStore {
   step: 1 | 2 | 3;
   setStep: (s: 1 | 2 | 3) => void;
@@ -95,6 +104,12 @@ interface StudioStore {
   selectVersionForStep3: (id: string) => void;
   setGuideImage: (verId: string, itemId: string, dataUrl: string) => void;
   updateColorPalette: (verId: string, palette: Record<string, { hex: string; usage: string }>) => void;
+  updateGuideline: (verId: string, patch: Partial<Guideline>) => void;
+
+  // 스냅샷 (되돌리기)
+  guidelineSnapshots: GuidelineSnapshot[];
+  pushSnapshot: (verId: string, description: string) => void;
+  undoSnapshot: (snapshotId: string) => void;
 
   selectedItems: Set<number>;
   toggleItem: (idx: number) => void;
@@ -181,6 +196,66 @@ export const useStore = create<StudioStore>((set, get) => ({
           : v
       ),
     })),
+  updateGuideline: (verId, patch) =>
+    set((s) => ({
+      versions: s.versions.map((v) =>
+        v.id === verId && v.guideline
+          ? {
+              ...v,
+              guideline: { ...v.guideline, ...patch },
+              preview: {
+                colors: Object.values(patch.color_palette || v.guideline.color_palette || {})
+                  .slice(0, 4)
+                  .map((c: any) => c.hex)
+                  .filter(Boolean),
+                mood: (patch.mood || v.guideline.mood)?.keywords?.slice(0, 3) || [],
+                tone: (patch.mood || v.guideline.mood)?.tone || "",
+              },
+            }
+          : v
+      ),
+    })),
+
+  guidelineSnapshots: [],
+  pushSnapshot: (verId, description) =>
+    set((s) => {
+      const ver = s.versions.find((v) => v.id === verId);
+      if (!ver) return s;
+      const snap: GuidelineSnapshot = {
+        id: "snap_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
+        timestamp: timeStr(),
+        versionId: verId,
+        guideline: JSON.parse(JSON.stringify(ver.guideline)),
+        guideImages: { ...ver.guideImages },
+        description,
+      };
+      return { guidelineSnapshots: [...s.guidelineSnapshots, snap] };
+    }),
+  undoSnapshot: (snapshotId) =>
+    set((s) => {
+      const snap = s.guidelineSnapshots.find((sn) => sn.id === snapshotId);
+      if (!snap) return s;
+      return {
+        versions: s.versions.map((v) =>
+          v.id === snap.versionId
+            ? {
+                ...v,
+                guideline: JSON.parse(JSON.stringify(snap.guideline)),
+                guideImages: { ...snap.guideImages },
+                preview: {
+                  colors: Object.values(snap.guideline.color_palette || {})
+                    .slice(0, 4)
+                    .map((c: any) => c.hex)
+                    .filter(Boolean),
+                  mood: snap.guideline.mood?.keywords?.slice(0, 3) || [],
+                  tone: snap.guideline.mood?.tone || "",
+                },
+              }
+            : v
+        ),
+        guidelineSnapshots: s.guidelineSnapshots.filter((sn) => sn.id !== snapshotId),
+      };
+    }),
 
   selectedItems: new Set(),
   toggleItem: (idx) =>

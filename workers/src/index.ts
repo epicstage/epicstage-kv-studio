@@ -426,44 +426,58 @@ app.post("/api/upscale", async (c) => {
 // ─── Agent Chat (Gemini conversation proxy) ─────────────────────────────────
 
 app.post("/api/chat", async (c) => {
-  const apiKey = c.env.OPENROUTER_API_KEY || c.env.GEMINI_API_KEY;
+  const apiKey = c.env.GEMINI_API_KEY;
   if (!apiKey) {
-    throw new HTTPException(500, { message: "API key not configured" });
+    throw new HTTPException(500, { message: "GEMINI_API_KEY not configured" });
   }
 
-  const { messages, context } = await c.req.json<{
+  const { messages, context, system, ciImages, ciDocs } = await c.req.json<{
     messages: Array<{ role: string; content: string }>;
     context?: { guideline?: any; references?: any[] };
+    system?: string;
+    ciImages?: Array<{ mime: string; base64: string }>;
+    ciDocs?: Array<{ mime: string; base64: string }>;
   }>();
 
   if (!messages?.length) {
     throw new HTTPException(400, { message: "messages required" });
   }
 
-  const systemPrompt = `You are Epic-Studio AI assistant, an expert event design consultant.
+  const systemPrompt = system ?? `You are Epic-Studio AI assistant, an expert event design consultant.
 You help users refine their event visual designs. You speak Korean naturally.
 ${context?.guideline ? `Current design guideline: ${JSON.stringify(context.guideline)}` : ""}
 ${context?.references?.length ? `Selected reference styles: ${JSON.stringify(context.references)}` : ""}
 Give specific, actionable design suggestions. Be concise.`;
 
-  const chatMessages = [
-    { role: "system", content: systemPrompt },
-    ...messages.map((m) => ({ role: m.role, content: m.content })),
-  ];
+  // Convert chat messages to Gemini format, inject CI images/docs into first user message
+  const contents = messages.map((m, i) => {
+    const parts: any[] = [];
+    // Attach CI images and docs to first user message
+    if (i === 0 && m.role === "user") {
+      if (ciImages?.length) {
+        for (const img of ciImages) {
+          parts.push({ inlineData: { mimeType: img.mime, data: img.base64 } });
+        }
+      }
+      if (ciDocs?.length) {
+        for (const doc of ciDocs) {
+          parts.push({ inlineData: { mimeType: doc.mime, data: doc.base64 } });
+        }
+      }
+    }
+    parts.push({ text: m.content });
+    return { role: m.role === "assistant" ? "model" : "user", parts };
+  });
 
-  const response = await fetch(`${OPENROUTER_BASE}/chat/completions`, {
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
+
+  const response = await fetch(geminiUrl, {
     method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${apiKey}`,
-      "HTTP-Referer": "https://epic-studio.epicstage.co.kr",
-      "X-Title": "Epic-Studio",
-    },
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      model: "google/gemini-2.5-flash",
-      messages: chatMessages,
-      temperature: 0.7,
-      max_tokens: 1024,
+      system_instruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: { temperature: 0.7, maxOutputTokens: 65536 },
     }),
   });
 
@@ -473,7 +487,7 @@ Give specific, actionable design suggestions. Be concise.`;
   }
 
   const data: any = await response.json();
-  const reply = data?.choices?.[0]?.message?.content ?? "응답을 생성할 수 없습니다.";
+  const reply = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "응답을 생성할 수 없습니다.";
 
   return c.json({ reply });
 });

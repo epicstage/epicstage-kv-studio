@@ -15,6 +15,30 @@ function fileToBase64(file: File): Promise<string> {
   });
 }
 
+function compressImage(file: File, maxDim = 1024, quality = 0.8): Promise<{ base64: string; mime: string }> {
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        const scale = maxDim / Math.max(width, height);
+        width = Math.round(width * scale);
+        height = Math.round(height * scale);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", quality);
+      resolve({ base64: dataUrl.split(",")[1], mime: "image/jpeg" });
+    };
+    img.onerror = reject;
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result as string; };
+    reader.readAsDataURL(file);
+  });
+}
+
 export default function EventInput({
   value,
   onChange,
@@ -31,11 +55,11 @@ export default function EventInput({
     const remaining = 8 - ciImages.length;
     const toProcess = Array.from(files).slice(0, remaining);
     for (const file of toProcess) {
-      const base64 = await fileToBase64(file);
+      const { base64, mime } = await compressImage(file, 1024, 0.8);
       addCiImage({
         id: "ci_" + Date.now() + "_" + Math.random().toString(36).slice(2),
         name: file.name,
-        mime: file.type,
+        mime,
         base64,
       });
     }
