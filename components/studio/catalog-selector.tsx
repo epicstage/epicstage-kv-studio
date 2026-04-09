@@ -4,84 +4,109 @@ import { useState } from "react";
 import { useStore } from "./use-store";
 import { MASTER_CATALOG, CATEGORIES } from "./constants";
 
+const CATEGORY_ORDER = ["메인 비주얼", "현장 설치", "인쇄", "디지털", "굿즈"] as const;
+
 export default function CatalogSelector() {
-  const { selectedItems, toggleItem, selectAllItems, deselectAllItems, setStep } = useStore();
-  const [category, setCategory] = useState("전체");
+  const { selectedItems, toggleItem, selectAllItems, deselectAllItems } = useStore();
   const [showCustom, setShowCustom] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customW, setCustomW] = useState("");
   const [customH, setCustomH] = useState("");
 
-  const filtered = category === "전체"
-    ? MASTER_CATALOG
-    : MASTER_CATALOG.filter((item) => item.category === category);
+  // 카테고리별 그룹
+  const grouped = CATEGORY_ORDER.map((cat) => ({
+    category: cat,
+    items: MASTER_CATALOG.map((item, idx) => ({ ...item, globalIdx: idx })).filter(
+      (item) => item.category === cat
+    ),
+  }));
 
-  function gcd(a: number, b: number): number { return b === 0 ? a : gcd(b, a % b); }
+  function selectCategory(cat: string) {
+    MASTER_CATALOG.forEach((item, idx) => {
+      if (item.category === cat && !selectedItems.has(idx)) toggleItem(idx);
+    });
+  }
 
-  function addCustom() {
-    if (!customName.trim()) return;
-    const w = parseFloat(customW) || 1;
-    const h = parseFloat(customH) || 1;
-    const g = gcd(Math.round(w * 10), Math.round(h * 10));
-    const ratio = `${Math.round(w * 10 / g)}:${Math.round(h * 10 / g)}`;
-    // Add to store as custom item (append to end conceptually)
-    // For now just select it
-    setCustomName("");
-    setCustomW("");
-    setCustomH("");
-    setShowCustom(false);
+  function deselectCategory(cat: string) {
+    MASTER_CATALOG.forEach((item, idx) => {
+      if (item.category === cat && selectedItems.has(idx)) toggleItem(idx);
+    });
+  }
+
+  function categorySelectedCount(cat: string) {
+    return MASTER_CATALOG.filter((item, idx) => item.category === cat && selectedItems.has(idx)).length;
+  }
+
+  function categoryTotal(cat: string) {
+    return MASTER_CATALOG.filter((item) => item.category === cat).length;
   }
 
   return (
     <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
+      {/* Header */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-nacelle text-sm font-semibold text-white">
           제작물 선택 <span className="text-indigo-400">({selectedItems.size}/{MASTER_CATALOG.length})</span>
         </h3>
         <div className="flex items-center gap-2">
-          <div className="flex gap-1">
-            {CATEGORIES.map((cat) => (
-              <button
-                key={cat}
-                onClick={() => setCategory(cat)}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-                  category === cat
-                    ? "bg-indigo-500/10 text-indigo-400 ring-1 ring-indigo-500/30"
-                    : "text-gray-500 hover:text-gray-300"
-                }`}
-              >
-                {cat}
-              </button>
-            ))}
-          </div>
-          <div className="h-4 w-px bg-gray-800" />
           <button onClick={selectAllItems} className="text-[10px] text-gray-500 hover:text-gray-300">전체선택</button>
-          <button onClick={deselectAllItems} className="text-[10px] text-gray-500 hover:text-gray-300">해제</button>
+          <button onClick={deselectAllItems} className="text-[10px] text-gray-500 hover:text-gray-300">전체해제</button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
-        {filtered.map((item) => {
-          const globalIdx = MASTER_CATALOG.indexOf(item);
-          const isSelected = selectedItems.has(globalIdx);
+      {/* Category sections */}
+      <div className="space-y-4">
+        {grouped.map(({ category, items }) => {
+          const selCount = categorySelectedCount(category);
+          const total = categoryTotal(category);
+          const allSelected = selCount === total;
+
           return (
-            <button
-              key={globalIdx}
-              onClick={() => toggleItem(globalIdx)}
-              className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-left text-xs transition-all ${
-                isSelected
-                  ? "border-indigo-500/50 bg-indigo-500/5 text-indigo-300"
-                  : "border-gray-800 bg-gray-950/50 text-gray-400 hover:border-gray-700 hover:text-gray-300"
-              }`}
-            >
-              <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] ${
-                isSelected ? "border-indigo-500 bg-indigo-500 text-white" : "border-gray-700"
-              }`}>
-                {isSelected && "✓"}
-              </span>
-              <span className="truncate">{item.name}</span>
-              <span className="ml-auto shrink-0 font-mono text-[10px] text-gray-600">{item.ratio}</span>
-            </button>
+            <div key={category}>
+              {/* Category header */}
+              <div className="mb-2 flex items-center gap-2">
+                <button
+                  onClick={() => allSelected ? deselectCategory(category) : selectCategory(category)}
+                  className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border text-[9px] transition-colors ${
+                    allSelected
+                      ? "border-indigo-500 bg-indigo-500 text-white"
+                      : selCount > 0
+                        ? "border-indigo-500/50 bg-indigo-500/20 text-indigo-400"
+                        : "border-gray-700 hover:border-gray-600"
+                  }`}
+                >
+                  {allSelected ? "✓" : selCount > 0 ? "−" : ""}
+                </button>
+                <span className="text-xs font-semibold text-gray-300">{category}</span>
+                <span className="text-[10px] text-gray-600">({selCount}/{total})</span>
+              </div>
+
+              {/* Items grid */}
+              <div className="grid grid-cols-2 gap-1.5 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
+                {items.map((item) => {
+                  const isSelected = selectedItems.has(item.globalIdx);
+                  return (
+                    <button
+                      key={item.globalIdx}
+                      onClick={() => toggleItem(item.globalIdx)}
+                      className={`flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-left text-[11px] transition-all ${
+                        isSelected
+                          ? "border-indigo-500/50 bg-indigo-500/5 text-indigo-300"
+                          : "border-gray-800 bg-gray-950/50 text-gray-400 hover:border-gray-700 hover:text-gray-300"
+                      }`}
+                    >
+                      <span className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border text-[8px] ${
+                        isSelected ? "border-indigo-500 bg-indigo-500 text-white" : "border-gray-700"
+                      }`}>
+                        {isSelected && "✓"}
+                      </span>
+                      <span className="truncate">{item.name}</span>
+                      <span className="ml-auto shrink-0 font-mono text-[9px] text-gray-600">{item.ratio}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
           );
         })}
       </div>
@@ -133,7 +158,7 @@ export default function CatalogSelector() {
               </div>
             )}
             <button
-              onClick={addCustom}
+              onClick={() => { setShowCustom(false); }}
               className="rounded bg-indigo-600 px-3 py-1.5 text-xs text-white hover:bg-indigo-500"
             >
               추가
