@@ -29,6 +29,7 @@ app.use(
       "http://localhost:3000",
       "https://epic-studio.epicstage.co.kr",
       "https://epic-studio-cpb.pages.dev",
+      "https://main.epic-studio-cpb.pages.dev",
     ],
     allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allowHeaders: ["Content-Type", "Authorization"],

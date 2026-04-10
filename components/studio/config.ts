@@ -1,4 +1,4 @@
-export const API_BASE = "https://epic-studio-api.pd-302.workers.dev";
+export const API_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
 
 export const isLocal = () =>
   typeof window !== "undefined" && window.location.hostname === "localhost";
