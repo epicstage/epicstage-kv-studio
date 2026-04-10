@@ -224,11 +224,35 @@ export default function ReferenceSearch({
             </div>
 
             {loading && (
-              <div className="flex items-center justify-center py-6 text-sm text-gray-500">검색 중...</div>
+              <div className="flex flex-col items-center justify-center gap-2 py-10 text-sm text-gray-500">
+                <svg className="h-5 w-5 animate-spin text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+                검색 중...
+              </div>
             )}
 
             {error && !loading && (
-              <div className="text-xs text-red-400">{error}</div>
+              <div className="flex items-center gap-2 rounded-lg border border-red-500/20 bg-red-500/5 px-3 py-2 text-xs text-red-400">
+                <svg className="h-3.5 w-3.5 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                {error}
+              </div>
+            )}
+
+            {!loading && results.length === 0 && !error && (
+              <div className="flex flex-col items-center justify-center gap-3 py-10 text-center">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gray-800">
+                  <svg className="h-6 w-6 text-gray-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                  </svg>
+                </div>
+                <div>
+                  <p className="text-sm text-gray-500">레퍼런스 이미지를 검색하세요</p>
+                  <p className="mt-1 text-xs text-gray-600">예: 기업 세미나 포토월, 축제 배너</p>
+                </div>
+              </div>
             )}
 
             {!loading && results.length > 0 && (

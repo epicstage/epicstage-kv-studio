@@ -72,8 +72,16 @@ export default function ChatPanel({ guideline }: { guideline?: any }) {
 
       <div ref={scrollRef} className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
         {messages.length === 0 && (
-          <div className="flex flex-1 items-center justify-center text-sm text-gray-600">
-            디자인 시안에 대해 자유롭게 질문하세요
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-indigo-500/10">
+              <svg className="h-5 w-5 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm text-gray-500">디자인 가이드라인 AI 어시스턴트</p>
+              <p className="mt-1 text-xs text-gray-600">색상, 톤앤매너, 레이아웃에 대해 질문하세요</p>
+            </div>
           </div>
         )}
         {messages.map((m, i) => (

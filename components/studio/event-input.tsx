@@ -57,10 +57,13 @@ export default function EventInput({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* Event info */}
       <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-        <h3 className="mb-3 font-nacelle text-sm font-semibold text-white">
+        <h3 className="mb-3 flex items-center gap-2 font-nacelle text-sm font-semibold text-white">
+          <svg className="h-4 w-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
           행사 정보
         </h3>
         <textarea
@@ -74,12 +77,16 @@ export default function EventInput({
 
       {/* CI Upload */}
       <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-        <h3 className="mb-3 font-nacelle text-sm font-semibold text-white">
-          CI 이미지 <span className="text-gray-500 font-normal">로고, 최대 8장 ({ciImages.length}/8)</span>
+        <h3 className="mb-3 flex items-center gap-2 font-nacelle text-sm font-semibold text-white">
+          <svg className="h-4 w-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+          </svg>
+          CI 이미지
+          <span className="ml-1 text-xs font-normal text-gray-500">로고·{ciImages.length}/8장</span>
         </h3>
 
         <label
-          className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-gray-700 bg-gray-950/50 px-4 py-6 text-sm text-gray-500 transition-colors hover:border-indigo-500/50 hover:text-gray-400"
+          className="group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-700 bg-gray-950/50 px-4 py-5 text-sm text-gray-500 transition-colors hover:border-indigo-500/50 hover:bg-indigo-500/5 hover:text-gray-400"
           onDrop={(e) => { e.preventDefault(); handleFiles(e.dataTransfer.files); }}
           onDragOver={(e) => e.preventDefault()}
         >
@@ -91,6 +98,9 @@ export default function EventInput({
             className="hidden"
             onChange={(e) => handleFiles(e.target.files)}
           />
+          <svg className="h-5 w-5 text-gray-600 transition-colors group-hover:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
           클릭하거나 이미지를 드롭
         </label>
 
@@ -117,12 +127,16 @@ export default function EventInput({
 
       {/* CI Guide Docs */}
       <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-        <h3 className="mb-3 font-nacelle text-sm font-semibold text-white">
-          CI 가이드 문서 <span className="text-gray-500 font-normal">PDF 등, 최대 5개 ({ciDocs.length}/5)</span>
+        <h3 className="mb-3 flex items-center gap-2 font-nacelle text-sm font-semibold text-white">
+          <svg className="h-4 w-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          CI 가이드 문서
+          <span className="ml-1 text-xs font-normal text-gray-500">PDF 등·{ciDocs.length}/5개</span>
         </h3>
 
         <label
-          className="flex cursor-pointer items-center justify-center rounded-lg border border-dashed border-gray-700 bg-gray-950/50 px-4 py-4 text-sm text-gray-500 transition-colors hover:border-indigo-500/50 hover:text-gray-400"
+          className="group flex cursor-pointer flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-gray-700 bg-gray-950/50 px-4 py-4 text-sm text-gray-500 transition-colors hover:border-indigo-500/50 hover:bg-indigo-500/5 hover:text-gray-400"
           onDrop={(e) => { e.preventDefault(); handleDocs(e.dataTransfer.files); }}
           onDragOver={(e) => e.preventDefault()}
         >
@@ -134,7 +148,11 @@ export default function EventInput({
             className="hidden"
             onChange={(e) => { handleDocs(e.target.files); e.target.value = ""; }}
           />
-          클릭하거나 파일을 드롭 (PDF, PPT, DOC, TXT)
+          <svg className="h-5 w-5 text-gray-600 transition-colors group-hover:text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+          </svg>
+          <span>클릭하거나 파일을 드롭</span>
+          <span className="text-xs text-gray-600">PDF · PPT · DOC · TXT</span>
         </label>
 
         {ciDocs.length > 0 && (
@@ -160,8 +178,12 @@ export default function EventInput({
 
       {/* Style override */}
       <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
-        <h3 className="mb-3 font-nacelle text-sm font-semibold text-white">
-          추가 스타일 지시 <span className="text-gray-500 font-normal">선택</span>
+        <h3 className="mb-3 flex items-center gap-2 font-nacelle text-sm font-semibold text-white">
+          <svg className="h-4 w-4 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
+          </svg>
+          추가 스타일 지시
+          <span className="ml-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] font-normal text-gray-500">선택</span>
         </h3>
         <input
           type="text"
