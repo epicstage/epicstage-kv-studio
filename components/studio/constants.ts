@@ -1,8 +1,13 @@
+// KV 전용 (Step 3에서만 사용)
+export const KV_RATIOS = [
+  { name: "메인 KV (가로)", ratio: "16:9" },
+  { name: "메인 KV (세로)", ratio: "3:4" },
+  { name: "메인 KV (정사각)", ratio: "1:1" },
+] as const;
+
+// 바리에이션 카탈로그 — KV 3종 제외, 54종
 export const MASTER_CATALOG = [
-  { name: "메인 KV (가로)", ratio: "16:9", category: "현장" },
-  { name: "메인 KV (세로)", ratio: "3:4", category: "현장" },
-  { name: "메인 KV (정사각)", ratio: "1:1", category: "현장" },
-  { name: "무대 배경", ratio: "16:9", category: "현장" },
+  { name: "무대 배경", ratio: "16:9", category: "현장" },  // index 0
   { name: "무대 사이드 스크린", ratio: "9:16", category: "현장" },
   { name: "포토월", ratio: "16:9", category: "현장" },
   { name: "입구 X배너", ratio: "2:3", category: "현장" },

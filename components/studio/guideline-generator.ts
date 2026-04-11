@@ -414,7 +414,89 @@ export async function generateProductionPlan(
 }
 
 /**
- * 제작물 이미지 생성 — 상세 프롬프트 (headline, subtext, PRINT_SPEC 포함)
+ * 마스터 KV 생성
+ */
+export async function generateMasterKV(
+  guideline: Guideline,
+  ratio: string,
+  kvName: string,
+  ciImages?: Array<{ mime: string; base64: string }>,
+  refAnalysis?: string
+): Promise<string> {
+  const designSystem = extractDesignSystemForProduction(guideline, "kv");
+
+  const userContent = `Professional event key visual (master KV). Production-ready.
+Aspect ratio: ${ratio}.
+Type: ${kvName}
+
+${designSystem}
+
+=== TEXTS TO RENDER ===
+- HEADLINE: "${guideline.event_summary?.name}"
+${guideline.event_summary?.date ? `- DATE: "${guideline.event_summary.date}"` : ""}
+${guideline.event_summary?.slogan ? `- SLOGAN: "${guideline.event_summary.slogan}"` : ""}
+
+=== VISUAL STYLE ===
+This is the MASTER Key Visual. Make it bold, memorable, and visually striking.
+All graphic motifs, colors, and mood from the design system must be fully expressed.
+${refAnalysis ? `Reference direction: ${refAnalysis}` : ""}
+
+RENDERING:
+${PRINT_SPEC_INSTRUCTION}
+
+REQUIREMENTS:
+- This is the hero image — highest visual impact
+- Render ONLY the text listed above
+- Professional print/digital quality`;
+
+  const url = IMAGE_URL();
+
+  let resp: Response;
+  if (isLocal()) {
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: userContent,
+        system: PRODUCTION_SYSTEM,
+        ciImages: ciImages ?? [],
+        guideImageUrls: [],
+      }),
+    });
+  } else {
+    const parts: any[] = [];
+    (ciImages ?? []).slice(0, 3).forEach((img) => {
+      parts.push({ inlineData: { mimeType: img.mime, data: img.base64 } });
+    });
+    parts.push({ text: `${PRODUCTION_SYSTEM}\n\n---\n\n${userContent}` });
+    resp = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        model: "gemini-3.1-flash-image-preview",
+        contents: [{ role: "user", parts }],
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+      }),
+    });
+  }
+
+  if (!resp.ok) throw new Error(`KV 생성 실패: ${resp.status}`);
+  const data = await resp.json() as any;
+
+  if (isLocal()) {
+    if (data.error) throw new Error(data.error);
+    return data.imageUrl ?? "";
+  }
+
+  const resParts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
+  const imagePart = resParts.find((p: any) => p.inlineData);
+  if (!imagePart) throw new Error("KV 이미지 미포함 응답");
+  const { mimeType, data: b64 } = imagePart.inlineData;
+  return `data:${mimeType};base64,${b64}`;
+}
+
+/**
+ * 제작물 이미지 생성 — 마스터 KV 기반
  */
 export async function generateProductionImage(
   guideline: Guideline,
@@ -429,7 +511,7 @@ export async function generateProductionImage(
     renderInstruction?: string;
   },
   ciImages?: Array<{ mime: string; base64: string }>,
-  guideImages?: Record<string, string>,
+  masterKvUrl?: string,
   refAnalysis?: string
 ): Promise<string> {
   const designSystem = extractDesignSystemForProduction(guideline, prod.name);
@@ -439,9 +521,14 @@ export async function generateProductionImage(
   if (prod.headline) textLines.push(`- HEADLINE: "${prod.headline}"`);
   if (prod.subtext) textLines.push(`- SUBTEXT: "${prod.subtext}"`);
 
+  const kvRef = masterKvUrl
+    ? `\nMASTER KV REFERENCE (attached image): Extract ALL visual elements — color palette, graphic motifs, background style, typography mood, compositional language — and apply them faithfully to this ${prod.ratio} format. Recompose the layout for the new dimensions. Do NOT invent new design elements beyond what is in the KV.`
+    : "";
+
   const userContent = `Professional event graphic design. Production-ready.
 Aspect ratio: ${prod.ratio}.
 Type: ${prod.name}
+${kvRef}
 
 ${designSystem}
 
@@ -465,10 +552,9 @@ REQUIREMENTS:
 - Text must be legible with proper hierarchy
 - Professional print/digital quality
 - No placeholder text
-- Match the design system precisely`;
+- Match the design system and master KV precisely`;
 
   const url = IMAGE_URL();
-  const guideImageUrls = guideImages ? Object.values(guideImages).filter(Boolean) : [];
 
   let resp: Response;
   if (isLocal()) {
@@ -479,18 +565,19 @@ REQUIREMENTS:
         prompt: userContent,
         system: PRODUCTION_SYSTEM,
         ciImages: ciImages ?? [],
-        guideImageUrls,
+        guideImageUrls: masterKvUrl ? [masterKvUrl] : [],
       }),
     });
   } else {
     const parts: any[] = [];
-    (ciImages ?? []).slice(0, 3).forEach((img) => {
+    (ciImages ?? []).slice(0, 2).forEach((img) => {
       parts.push({ inlineData: { mimeType: img.mime, data: img.base64 } });
     });
-    guideImageUrls.slice(0, 4).forEach((dataUrl) => {
-      const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/);
+    // 마스터 KV를 첫 번째 비주얼 레퍼런스로
+    if (masterKvUrl) {
+      const match = masterKvUrl.match(/^data:([^;]+);base64,(.+)$/);
       if (match) parts.push({ inlineData: { mimeType: match[1], data: match[2] } });
-    });
+    }
     parts.push({ text: `${PRODUCTION_SYSTEM}\n\n---\n\n${userContent}` });
     resp = await fetch(url, {
       method: "POST",
@@ -519,17 +606,16 @@ REQUIREMENTS:
 }
 
 /**
- * 대지(No-text) 버전 생성 — multi-turn으로 텍스트 제거
+ * 대지(No-text) 버전 생성 — 단일 턴으로 텍스트 제거
  */
 export async function generateNoTextVersion(
-  originalImageUrl: string,
-  originalPrompt: string,
-  thoughtSignature?: string
-): Promise<{ imageUrl: string; thoughtSignature?: string }> {
+  originalImageUrl: string
+): Promise<string> {
   const url = IMAGE_URL();
-  const removeTextPrompt = `Remove ALL text, typography, labels, captions, headlines, logos with text, and any written characters from the image. Keep the entire background, graphic elements, layout composition, colors, shapes, textures, and decorative elements completely identical. Return only the background/canvas version with zero text.`;
+  const removeTextPrompt = `Remove ALL text, numbers, and typographic elements from this image.
+Preserve 100% of: backgrounds, colors, graphic shapes, textures, patterns, decorative elements.
+Output only the text-free artboard/canvas version.`;
 
-  // Extract base64 from data URL
   const match = originalImageUrl.match(/^data:([^;]+);base64,(.+)$/);
   if (!match) throw new Error("Invalid image data URL");
   const [, imgMime, imgData] = match;
@@ -539,10 +625,8 @@ export async function generateNoTextVersion(
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        originalPrompt,
         imageMime: imgMime,
         imageBase64: imgData,
-        thoughtSignature,
         removeTextPrompt,
         system: NO_TEXT_SYSTEM,
       }),
@@ -550,29 +634,23 @@ export async function generateNoTextVersion(
     if (!resp.ok) throw new Error(`No-text failed: ${resp.status}`);
     const data = await resp.json() as any;
     if (data.error) throw new Error(data.error);
-    return { imageUrl: data.imageUrl, thoughtSignature: data.thoughtSignature };
+    return data.imageUrl;
   }
 
-  // prod: multi-turn direct
-  const history: any[] = [
-    { role: "user", parts: [{ text: originalPrompt }] },
-    {
-      role: "model",
-      parts: [
-        ...(thoughtSignature ? [{ thoughtSignature }] : []),
-        { inlineData: { mimeType: imgMime, data: imgData } },
-      ],
-    },
-  ];
-
+  // 단일 턴: 원본 이미지 + 텍스트 제거 지시
   const resp = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       model: "gemini-3.1-flash-image-preview",
-      contents: [...history, { role: "user", parts: [{ text: removeTextPrompt }] }],
+      contents: [{
+        role: "user",
+        parts: [
+          { inlineData: { mimeType: imgMime, data: imgData } },
+          { text: removeTextPrompt },
+        ],
+      }],
       generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
-      system: NO_TEXT_SYSTEM,
     }),
   });
 
@@ -581,12 +659,8 @@ export async function generateNoTextVersion(
   const resParts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
   const imagePart = resParts.find((p: any) => p.inlineData);
   if (!imagePart) throw new Error("대지 이미지 미생성");
-  const newThought = resParts.find((p: any) => p.thoughtSignature)?.thoughtSignature;
   const { mimeType, data: b64 } = imagePart.inlineData;
-  return {
-    imageUrl: `data:${mimeType};base64,${b64}`,
-    thoughtSignature: newThought,
-  };
+  return `data:${mimeType};base64,${b64}`;
 }
 
 // ─── 유틸 ────────────────────────────────────────────────────────────────────

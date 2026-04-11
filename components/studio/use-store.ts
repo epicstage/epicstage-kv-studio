@@ -13,6 +13,13 @@ export interface Guideline {
   guide_items_to_visualize: Array<{ id: string; label: string; description: string }>;
 }
 
+export interface MasterKv {
+  imageUrl: string;       // data:image/... base64
+  ratio: string;          // "16:9" | "3:4" | "1:1"
+  confirmed: boolean;
+  uploadedByUser?: boolean;
+}
+
 export interface Version {
   id: string;
   num: number;
@@ -20,6 +27,7 @@ export interface Version {
   guideline: Guideline;
   preview: { colors: string[]; mood: string[]; tone: string };
   guideImages: Record<string, string>; // id → base64 data URL
+  masterKv?: MasterKv;
 }
 
 export interface ProductionPlanItem {
@@ -46,19 +54,19 @@ export interface Production {
   imagePrompt?: string;
   renderInstruction?: string;
   fullPrompt?: string;
+  stale?: boolean; // KV 변경 후 재생성 필요
   // no-text version
   noTextStatus?: "pending" | "generating" | "done" | "error";
   noTextUrl?: string;
   noTextError?: string;
-  noTextThoughtSignature?: string;
   // upscale
   upscaleStatus?: "pending" | "done" | "error";
   upscaleUrl?: string;
 }
 
 interface StudioStore {
-  step: 1 | 2 | 3;
-  setStep: (s: 1 | 2 | 3) => void;
+  step: 1 | 2 | 3 | 4;
+  setStep: (s: 1 | 2 | 3 | 4) => void;
 
   tier: string;
   setTier: (t: string) => void;
@@ -95,6 +103,9 @@ interface StudioStore {
   selectVersionForStep3: (id: string) => void;
   setGuideImage: (verId: string, itemId: string, dataUrl: string) => void;
   updateColorPalette: (verId: string, palette: Record<string, { hex: string; usage: string }>) => void;
+  setMasterKv: (verId: string, kv: MasterKv) => void;
+  confirmMasterKv: (verId: string) => void;
+  markVariationsStale: (verId: string) => void;
 
   selectedItems: Set<number>;
   toggleItem: (idx: number) => void;
@@ -181,6 +192,24 @@ export const useStore = create<StudioStore>((set, get) => ({
           : v
       ),
     })),
+  setMasterKv: (verId, kv) =>
+    set((s) => ({
+      versions: s.versions.map((v) => (v.id === verId ? { ...v, masterKv: kv } : v)),
+    })),
+  confirmMasterKv: (verId) =>
+    set((s) => ({
+      versions: s.versions.map((v) =>
+        v.id === verId && v.masterKv ? { ...v, masterKv: { ...v.masterKv, confirmed: true } } : v
+      ),
+    })),
+  markVariationsStale: (verId) =>
+    set((s) => {
+      // 해당 버전의 selectedVersionId가 맞는 경우에만 productions에 stale 표시
+      if (s.selectedVersionId !== verId) return {};
+      return {
+        productions: s.productions.map((p) => ({ ...p, stale: true })),
+      };
+    }),
 
   selectedItems: new Set(),
   toggleItem: (idx) =>
@@ -190,7 +219,7 @@ export const useStore = create<StudioStore>((set, get) => ({
       else next.add(idx);
       return { selectedItems: next };
     }),
-  selectAllItems: () => set({ selectedItems: new Set(Array.from({ length: 55 }, (_, i) => i)) }),
+  selectAllItems: () => set({ selectedItems: new Set(Array.from({ length: 54 }, (_, i) => i)) }),
   deselectAllItems: () => set({ selectedItems: new Set() }),
 
   productionPlan: null,

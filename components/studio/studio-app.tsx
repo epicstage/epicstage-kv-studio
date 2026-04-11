@@ -10,6 +10,7 @@ import ChatPanel from "./chat-panel";
 import GuidelineViewer from "./guideline-viewer";
 import CatalogSelector from "./catalog-selector";
 import ProductionGrid from "./production-grid";
+import KvGenerator from "./kv-generator";
 import { useState } from "react";
 
 export default function StudioApp() {
@@ -71,10 +72,10 @@ export default function StudioApp() {
     <div>
       {/* Step indicator */}
       <div className="mb-10 flex items-center justify-center">
-        {([1, 2, 3] as const).map((s, idx) => {
+        {([1, 2, 3, 4] as const).map((s, idx) => {
           const isDone = step > s;
           const isActive = step === s;
-          const labels = ["입력 & 가이드라인", "가이드 산출물", "제작물 이미지"];
+          const labels = ["입력 & 레퍼런스", "가이드라인 확인", "마스터 KV", "바리에이션 생성"];
           return (
             <div key={s} className="flex items-center">
               <button
@@ -102,8 +103,8 @@ export default function StudioApp() {
                   {labels[idx]}
                 </span>
               </button>
-              {idx < 2 && (
-                <div className={`mx-2 mb-5 h-px w-16 sm:w-24 transition-colors ${step > s ? "bg-indigo-600" : "bg-gray-800"}`} />
+              {idx < 3 && (
+                <div className={`mx-2 mb-5 h-px w-12 sm:w-20 transition-colors ${step > s ? "bg-indigo-600" : "bg-gray-800"}`} />
               )}
             </div>
           );
@@ -259,16 +260,16 @@ export default function StudioApp() {
                           <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 16 16">
                             <path d="M14.3.3c.4-.4 1-.4 1.4 0 .4.4.4 1 0 1.4l-8 8c-.2.2-.4.3-.7.3-.3 0-.5-.1-.7-.3l-4-4c-.4-.4-.4-1 0-1.4.4-.4 1-.4 1.4 0L7 7.6 14.3.3z" />
                           </svg>
-                          Step 3 확정됨
+                          가이드라인 확정됨
                         </>
-                      ) : "이 버전으로 Step 3 확정"}
+                      ) : "이 버전으로 가이드라인 확정"}
                     </button>
                     {selectedVersionId && (
                       <button
                         onClick={() => setStep(3)}
                         className="flex items-center gap-2 rounded-lg bg-gradient-to-t from-indigo-600 to-indigo-500 px-5 py-2 text-sm font-medium text-white shadow-lg shadow-indigo-500/20 transition-all hover:shadow-indigo-500/30"
                       >
-                        제작물 생성
+                        마스터 KV 생성
                         <svg className="h-4 w-4 text-white/70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
                         </svg>
@@ -303,9 +304,52 @@ export default function StudioApp() {
         </div>
       )}
 
-      {/* Step 3: Production */}
+      {/* Step 3: 마스터 KV */}
       {step === 3 && (
         <div className="space-y-6">
+          {/* 상단 정보 바 */}
+          <div className="flex items-center justify-between rounded-xl border border-gray-800/60 bg-gray-900/30 px-4 py-3">
+            <div>
+              <span className="text-sm font-medium text-gray-300">마스터 KV 생성</span>
+              <span className="ml-2 text-xs text-gray-600">
+                {confirmedVersion?.guideline?.event_summary?.name || ""}
+              </span>
+            </div>
+            <button
+              onClick={() => setStep(2)}
+              className="text-xs text-gray-600 transition-colors hover:text-gray-400"
+            >
+              ← 가이드라인으로
+            </button>
+          </div>
+
+          <KvGenerator onConfirm={() => setStep(4)} />
+        </div>
+      )}
+
+      {/* Step 4: 바리에이션 생성 */}
+      {step === 4 && (
+        <div className="space-y-6">
+          {/* 상단 정보 바 */}
+          <div className="flex items-center justify-between rounded-xl border border-gray-800/60 bg-gray-900/30 px-4 py-3">
+            <div className="flex items-center gap-3">
+              <span className="text-sm font-medium text-gray-300">바리에이션 생성</span>
+              {confirmedVersion?.masterKv?.imageUrl && (
+                <img
+                  src={confirmedVersion.masterKv.imageUrl}
+                  alt="마스터 KV 썸네일"
+                  className="h-8 w-14 rounded object-cover ring-1 ring-indigo-500/30"
+                />
+              )}
+            </div>
+            <button
+              onClick={() => setStep(3)}
+              className="text-xs text-gray-600 transition-colors hover:text-gray-400"
+            >
+              ← 마스터 KV
+            </button>
+          </div>
+
           <CatalogSelector />
           <ProductionGrid />
 

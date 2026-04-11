@@ -40,13 +40,13 @@ function ProductionCard({
 
   async function handleRegenerate() {
     if (!activeVersion) return;
-    updateProduction(prod.id, { status: "generating", error: undefined });
+    updateProduction(prod.id, { status: "generating", error: undefined, stale: false });
     const { ciImages, refAnalysis } = useStore.getState();
     const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
-    const guideImgs = activeVersion.guideImages ?? {};
+    const masterKvUrl = activeVersion.masterKv?.imageUrl;
     try {
       const imageUrl = await generateProductionImage(
-        activeVersion.guideline, prod, ci, guideImgs, refAnalysis || undefined
+        activeVersion.guideline, prod, ci, masterKvUrl, refAnalysis || undefined
       );
       updateProduction(prod.id, { status: "done", imageUrl });
     } catch (err: any) {
@@ -55,19 +55,11 @@ function ProductionCard({
   }
 
   async function handleNoText() {
-    if (!prod.imageUrl || !prod.fullPrompt) return;
+    if (!prod.imageUrl) return;
     updateProduction(prod.id, { noTextStatus: "generating", noTextError: undefined });
     try {
-      const result = await generateNoTextVersion(
-        prod.imageUrl,
-        prod.fullPrompt,
-        prod.noTextThoughtSignature
-      );
-      updateProduction(prod.id, {
-        noTextStatus: "done",
-        noTextUrl: result.imageUrl,
-        noTextThoughtSignature: result.thoughtSignature,
-      });
+      const noTextUrl = await generateNoTextVersion(prod.imageUrl);
+      updateProduction(prod.id, { noTextStatus: "done", noTextUrl });
     } catch (err: any) {
       updateProduction(prod.id, { noTextStatus: "error", noTextError: err.message });
     }
@@ -80,11 +72,16 @@ function ProductionCard({
           <span className="font-nacelle text-sm font-semibold text-white">{prod.name}</span>
           <span className="font-mono text-[10px] text-gray-600">{prod.ratio}</span>
           <span className="text-[10px] text-gray-600">{prod.category}</span>
+          {prod.stale && (
+            <span className="rounded-full bg-orange-500/10 px-2 py-0.5 text-[10px] font-medium text-orange-400 ring-1 ring-orange-500/20">
+              KV 변경됨 · 재생성 필요
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-2">
-          {prod.status === "error" && (
+          {(prod.status === "error" || prod.stale) && prod.status !== "generating" && (
             <button onClick={handleRegenerate} className="rounded bg-gray-800 px-2 py-0.5 text-[10px] text-gray-300 hover:bg-gray-700">
-              재시도
+              {prod.stale ? "재생성" : "재시도"}
             </button>
           )}
           <span className={`rounded-full px-2.5 py-0.5 text-[10px] font-medium ${
@@ -275,7 +272,7 @@ export default function ProductionGrid() {
     if (!activeVersion || !productionPlan?.length) return;
     setProcessing(true);
     const ci = getCiArgs();
-    const guideImgs = activeVersion.guideImages ?? {};
+    const masterKvUrl = activeVersion.masterKv?.imageUrl;
 
     // plan 중 아직 production이 없는 것만 생성
     const existingNames = new Set(productions.map((p) => p.name));
@@ -311,7 +308,7 @@ export default function ProductionGrid() {
           up(prod.id, { status: "generating" });
           try {
             const imageUrl = await generateProductionImage(
-              activeVersion.guideline, prod, ci, guideImgs, refAnalysis || undefined
+              activeVersion.guideline, prod, ci, masterKvUrl, refAnalysis || undefined
             );
             up(prod.id, { status: "done", imageUrl });
             addLog(`${prod.name} 완료`, "ok");
