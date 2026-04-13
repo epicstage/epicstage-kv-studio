@@ -3,12 +3,47 @@
 import { useRef } from "react";
 import { useStore } from "./use-store";
 
+/**
+ * 파일 확장자 → MIME 추론. Mac 브라우저에서 file.type이 빈 문자열일 때 사용.
+ */
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+  pdf: "application/pdf", txt: "text/plain",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  ppt: "application/vnd.ms-powerpoint",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+};
+
+function resolveMime(file: File): string {
+  if (file.type) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return EXT_TO_MIME[ext] || "application/octet-stream";
+}
+
+/**
+ * base64 문자열 정규화 — Safari에서 발생하는 패딩 누락/공백 문제 방지.
+ * Safari는 대용량 base64에서 whitespace를 삽입하거나 패딩(=)을 누락시킬 수 있음.
+ */
+function sanitizeBase64(raw: string): string {
+  // data: prefix 잔여분 제거 + 공백/개행 제거
+  let b64 = raw.replace(/^data:[^,]*,/, "").replace(/\s/g, "");
+  // base64 패딩 보정 (길이가 4의 배수가 되어야 함)
+  const pad = b64.length % 4;
+  if (pad === 2) b64 += "==";
+  else if (pad === 3) b64 += "=";
+  return b64;
+}
+
 function fileToBase64(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      resolve(result.split(",")[1]); // strip data:...;base64,
+      const idx = result.indexOf(",");
+      const raw = idx >= 0 ? result.substring(idx + 1) : result;
+      resolve(sanitizeBase64(raw));
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
@@ -35,7 +70,7 @@ export default function EventInput({
       addCiImage({
         id: "ci_" + Date.now() + "_" + Math.random().toString(36).slice(2),
         name: file.name,
-        mime: file.type,
+        mime: resolveMime(file),
         base64,
       });
     }
@@ -50,7 +85,7 @@ export default function EventInput({
       addCiDoc({
         id: "doc_" + Date.now() + "_" + Math.random().toString(36).slice(2),
         name: file.name,
-        mime: file.type,
+        mime: resolveMime(file),
         base64,
       });
     }

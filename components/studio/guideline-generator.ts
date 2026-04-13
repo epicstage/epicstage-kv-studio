@@ -301,7 +301,10 @@ export async function generateGuideline(
     }),
   });
 
-  if (!resp.ok) throw new Error(`Generate failed: ${resp.status}`);
+  if (!resp.ok) {
+    const errBody = await resp.text().catch(() => "");
+    throw new Error(`Generate failed: ${resp.status} ${errBody.slice(0, 200)}`);
+  }
   const data = await resp.json();
   const text = data.reply ?? "";
   return parseJSON(text);

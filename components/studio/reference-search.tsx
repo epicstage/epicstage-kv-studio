@@ -15,14 +15,37 @@ interface RefResult {
   source: string;
 }
 
+const EXT_TO_MIME: Record<string, string> = {
+  png: "image/png", jpg: "image/jpeg", jpeg: "image/jpeg",
+  gif: "image/gif", webp: "image/webp", svg: "image/svg+xml",
+};
+
+function resolveMime(file: File, header: string): string {
+  const fromHeader = header.match(/data:(.*);base64/)?.[1];
+  if (fromHeader) return fromHeader;
+  if (file.type) return file.type;
+  const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
+  return EXT_TO_MIME[ext] || "image/jpeg";
+}
+
+function sanitizeBase64(raw: string): string {
+  let b64 = raw.replace(/\s/g, "");
+  const pad = b64.length % 4;
+  if (pad === 2) b64 += "==";
+  else if (pad === 3) b64 += "=";
+  return b64;
+}
+
 function fileToBase64(file: File): Promise<{ base64: string; mime: string }> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result as string;
-      const [header, base64] = result.split(",");
-      const mime = header.match(/data:(.*);base64/)?.[1] || file.type;
-      resolve({ base64, mime });
+      const idx = result.indexOf(",");
+      const header = idx >= 0 ? result.substring(0, idx) : "";
+      const raw = idx >= 0 ? result.substring(idx + 1) : result;
+      const mime = resolveMime(file, header);
+      resolve({ base64: sanitizeBase64(raw), mime });
     };
     reader.onerror = reject;
     reader.readAsDataURL(file);
