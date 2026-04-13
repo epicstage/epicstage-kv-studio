@@ -357,7 +357,7 @@ INSTRUCTION:
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gemini-3.1-flash-image-preview",
+        model: "gemini-3-pro-image-preview",
         contents: [{ role: "user", parts }],
         generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
       }),
@@ -476,7 +476,7 @@ REQUIREMENTS:
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        model: "gemini-3.1-flash-image-preview",
+        model: "gemini-3-pro-image-preview",
         contents: [{ role: "user", parts }],
         generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
       }),
