@@ -12,6 +12,9 @@ export interface Env {
   NAVER_CLIENT_SECRET: string;
   EPIC_SEARCH_URL: string;
   EPIC_SEARCH_API_KEY: string;
+  VECTORIZER_API_ID: string;
+  VECTORIZER_API_SECRET: string;
+  RECRAFT_API_TOKEN: string;
 }
 
 // OpenRouter config — Nano Banana 2 (Gemini 3.1 Flash Image Preview)
@@ -395,40 +398,68 @@ app.post("/api/search/smart-references", async (c) => {
   return c.json({ images: unique, queries_used: queries });
 });
 
-// ─── Upscale Proxy (Real-ESRGAN via external or HuggingFace) ────────────────
+// ─── SVG Vectorize Proxy (Vectorizer.ai / Recraft AI) ─────────────────────
 
-app.post("/api/upscale", async (c) => {
+app.post("/api/vectorize", async (c) => {
   const formData = await c.req.formData();
-  const file = formData.get("file") as File | null;
-  const scale = Number(formData.get("scale") ?? 4);
+  const image = formData.get("image") as File | null;
+  const provider = (formData.get("provider") as string) || "vectorizer";
 
-  if (!file) {
-    throw new HTTPException(400, { message: "No file provided" });
+  if (!image) {
+    throw new HTTPException(400, { message: "image required" });
   }
 
-  // Store original in R2
-  const origKey = `originals/${crypto.randomUUID()}.png`;
-  const arrayBuf = await file.arrayBuffer();
-  await c.env.EPIC_STORAGE.put(origKey, arrayBuf, {
-    httpMetadata: { contentType: "image/png" },
-  });
+  if (provider === "recraft") {
+    const token = c.env.RECRAFT_API_TOKEN;
+    if (!token) throw new HTTPException(500, { message: "RECRAFT_API_TOKEN not configured" });
 
-  // For now, return the original with metadata indicating upscale is pending
-  // Real-ESRGAN integration requires a GPU endpoint (self-hosted or API)
-  const upscaledKey = `upscaled/${crypto.randomUUID()}.png`;
-  await c.env.EPIC_STORAGE.put(upscaledKey, arrayBuf, {
-    httpMetadata: { contentType: "image/png" },
-    customMetadata: { scale: String(scale), status: "pending", original: origKey },
-  });
+    const form = new FormData();
+    form.append("file", image);
+    form.append("response_format", "b64_json");
 
-  return c.json({
-    original_key: origKey,
-    upscaled_key: upscaledKey,
-    scale,
-    status: "pending",
-    message: "업스케일 대기 중 — GPU 엔드포인트 연결 시 자동 처리",
-    url: `/api/images/${encodeURIComponent(upscaledKey)}`,
+    const resp = await fetch("https://external.api.recraft.ai/v1/images/vectorize", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: form,
+    });
+    if (!resp.ok) {
+      const err = await resp.text();
+      return c.text(`Recraft error: ${err}`, resp.status as any);
+    }
+    const data = (await resp.json()) as any;
+    const b64 = data?.data?.[0]?.b64_json;
+    if (b64) {
+      return c.text(atob(b64), 200, { "Content-Type": "image/svg+xml" });
+    }
+    const url = data?.data?.[0]?.url;
+    if (url) {
+      const svgResp = await fetch(url);
+      return c.text(await svgResp.text(), 200, { "Content-Type": "image/svg+xml" });
+    }
+    return c.text("Recraft: no SVG in response", 500);
+  }
+
+  // Vectorizer.ai
+  const apiId = c.env.VECTORIZER_API_ID;
+  const apiSecret = c.env.VECTORIZER_API_SECRET;
+  if (!apiId || !apiSecret) throw new HTTPException(500, { message: "VECTORIZER_API_ID/SECRET not configured" });
+
+  const form = new FormData();
+  form.append("image", image);
+  form.append("output.file_format", "svg");
+  form.append("output.svg.version", "svg_1_1");
+  form.append("processing.max_colors", "0");
+
+  const resp = await fetch("https://api.vectorizer.ai/api/v1/vectorize", {
+    method: "POST",
+    headers: { Authorization: "Basic " + btoa(`${apiId}:${apiSecret}`) },
+    body: form,
   });
+  if (!resp.ok) {
+    const err = await resp.text();
+    return c.text(`Vectorizer.ai error: ${err}`, resp.status as any);
+  }
+  return c.text(await resp.text(), 200, { "Content-Type": "image/svg+xml" });
 });
 
 // ─── Agent Chat (Gemini multimodal conversation proxy) ──────────────────────
