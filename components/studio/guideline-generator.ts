@@ -359,7 +359,7 @@ INSTRUCTION:
       body: JSON.stringify({
         model: "gemini-3-pro-image-preview",
         contents: [{ role: "user", parts }],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1, imageConfig: { imageSize: "4K" } },
       }),
     });
   }
@@ -478,7 +478,7 @@ REQUIREMENTS:
       body: JSON.stringify({
         model: "gemini-3-pro-image-preview",
         contents: [{ role: "user", parts }],
-        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+        generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1, imageConfig: { imageSize: "4K" } },
       }),
     });
   }
@@ -653,7 +653,7 @@ Output only the text-free artboard/canvas version.`;
           { text: removeTextPrompt },
         ],
       }],
-      generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1 },
+      generationConfig: { responseModalities: ["TEXT", "IMAGE"], temperature: 1, imageConfig: { imageSize: "4K" } },
     }),
   });
 
