@@ -80,7 +80,7 @@ cd workers && npm install && npm run dev  # API on :8787
 - **D1**: `epic-studio-db` (d9d2f91e-0303-4479-bfac-91da125a3695)
 - **R2**: `epic-studio-storage`
 - **KV**: `EPIC_KV` (05f16e431a68467ca7c0dfc31ad9f77c)
-- **Worker**: `epic-studio-api` -> epic-studio-api.pd-302.workers.dev
+- **Worker**: `epic-studio-api` -> epic-studio-api.kbm-32f.workers.dev
 - **EpicSearch**: search.epicstage.co.kr (Cloudflare Tunnel -> VPS:8788)
 - **AI**: OpenRouter (Nano Banana 2 = google/gemini-3.1-flash-image-preview)
 

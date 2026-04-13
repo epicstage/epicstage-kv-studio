@@ -1,6 +1,6 @@
 // 레퍼런스 이미지들을 Gemini로 분석 → 스타일/무드/색상 JSON 반환
 
-const WORKER_BASE = "https://epic-studio-api.pd-302.workers.dev";
+const WORKER_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
 
 const SYSTEM = `너는 비주얼 디자인 분석 전문가야.
 첨부된 레퍼런스 이미지들의 공통 디자인 경향성을 JSON으로 추출한다.

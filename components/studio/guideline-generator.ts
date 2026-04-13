@@ -628,6 +628,7 @@ Output only the text-free artboard/canvas version.`;
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        originalPrompt: removeTextPrompt,
         imageMime: imgMime,
         imageBase64: imgData,
         removeTextPrompt,

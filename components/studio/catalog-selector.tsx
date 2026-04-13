@@ -5,16 +5,18 @@ import { useStore } from "./use-store";
 import { MASTER_CATALOG, CATEGORIES } from "./constants";
 
 export default function CatalogSelector() {
-  const { selectedItems, toggleItem, selectAllItems, deselectAllItems, setStep } = useStore();
+  const { selectedItems, toggleItem, selectAllItems, deselectAllItems, setStep, customItems, addCustomItem, removeCustomItem } = useStore();
   const [category, setCategory] = useState("전체");
   const [showCustom, setShowCustom] = useState(false);
   const [customName, setCustomName] = useState("");
   const [customW, setCustomW] = useState("");
   const [customH, setCustomH] = useState("");
 
+  const allItems = [...MASTER_CATALOG, ...customItems];
+
   const filtered = category === "전체"
-    ? MASTER_CATALOG
-    : MASTER_CATALOG.filter((item) => item.category === category);
+    ? allItems
+    : allItems.filter((item) => item.category === category);
 
   function gcd(a: number, b: number): number { return b === 0 ? a : gcd(b, a % b); }
 
@@ -24,8 +26,7 @@ export default function CatalogSelector() {
     const h = parseFloat(customH) || 1;
     const g = gcd(Math.round(w * 10), Math.round(h * 10));
     const ratio = `${Math.round(w * 10 / g)}:${Math.round(h * 10 / g)}`;
-    // Add to store as custom item (append to end conceptually)
-    // For now just select it
+    addCustomItem({ name: customName.trim(), ratio, category: "커스텀" });
     setCustomName("");
     setCustomW("");
     setCustomH("");
@@ -36,11 +37,11 @@ export default function CatalogSelector() {
     <div className="rounded-xl border border-gray-800 bg-gray-900/50 p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-nacelle text-sm font-semibold text-white">
-          제작물 선택 <span className="text-indigo-400">({selectedItems.size}/{MASTER_CATALOG.length})</span>
+          제작물 선택 <span className="text-indigo-400">({selectedItems.size}/{allItems.length})</span>
         </h3>
         <div className="flex items-center gap-2">
           <div className="flex gap-1">
-            {CATEGORIES.map((cat) => (
+            {[...CATEGORIES, ...(customItems.length > 0 ? ["커스텀" as const] : [])].map((cat) => (
               <button
                 key={cat}
                 onClick={() => setCategory(cat)}
@@ -62,8 +63,9 @@ export default function CatalogSelector() {
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
         {filtered.map((item) => {
-          const globalIdx = MASTER_CATALOG.indexOf(item);
+          const globalIdx = allItems.indexOf(item);
           const isSelected = selectedItems.has(globalIdx);
+          const isCustom = globalIdx >= MASTER_CATALOG.length;
           return (
             <button
               key={globalIdx}
@@ -81,6 +83,14 @@ export default function CatalogSelector() {
               </span>
               <span className="truncate">{item.name}</span>
               <span className="ml-auto shrink-0 font-mono text-[10px] text-gray-600">{item.ratio}</span>
+              {isCustom && (
+                <span
+                  onClick={(e) => { e.stopPropagation(); removeCustomItem(globalIdx - MASTER_CATALOG.length); }}
+                  className="shrink-0 text-[10px] text-red-500 hover:text-red-400"
+                >
+                  ✕
+                </span>
+              )}
             </button>
           );
         })}

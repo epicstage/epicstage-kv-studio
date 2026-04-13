@@ -1,6 +1,6 @@
 // Dev proxy — multi-turn으로 텍스트 제거 버전(대지) 생성
 
-const WORKER_BASE = "https://epic-studio-api.pd-302.workers.dev";
+const WORKER_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
 
 export async function POST(req: Request) {
   const { originalPrompt, imageMime, imageBase64, thoughtSignature, removeTextPrompt, system } =
@@ -13,13 +13,13 @@ export async function POST(req: Request) {
       system: string;
     };
 
-  if (!originalPrompt || !imageBase64) {
-    return Response.json({ error: "originalPrompt and imageBase64 required" }, { status: 400 });
+  if (!imageBase64) {
+    return Response.json({ error: "imageBase64 required" }, { status: 400 });
   }
 
   // Multi-turn: original prompt → model image → remove text request
   const history: any[] = [
-    { role: "user", parts: [{ text: originalPrompt }] },
+    { role: "user", parts: [{ text: originalPrompt || removeTextPrompt }] },
     {
       role: "model",
       parts: [

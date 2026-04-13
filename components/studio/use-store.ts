@@ -1,6 +1,7 @@
 "use client";
 
 import { create } from "zustand";
+import { MASTER_CATALOG } from "./constants";
 
 export interface Guideline {
   event_summary: { name: string; name_en: string; date: string; venue: string; organizer: string; theme: string; slogan: string };
@@ -107,6 +108,10 @@ interface StudioStore {
   confirmMasterKv: (verId: string) => void;
   markVariationsStale: (verId: string) => void;
 
+  customItems: Array<{ name: string; ratio: string; category: string }>;
+  addCustomItem: (item: { name: string; ratio: string; category: string }) => void;
+  removeCustomItem: (idx: number) => void;
+
   selectedItems: Set<number>;
   toggleItem: (idx: number) => void;
   selectAllItems: () => void;
@@ -211,6 +216,18 @@ export const useStore = create<StudioStore>((set, get) => ({
       };
     }),
 
+  customItems: [],
+  addCustomItem: (item) =>
+    set((s) => {
+      const newCustom = [...s.customItems, item];
+      const newIdx = MASTER_CATALOG.length + newCustom.length - 1;
+      const next = new Set(s.selectedItems);
+      next.add(newIdx);
+      return { customItems: newCustom, selectedItems: next };
+    }),
+  removeCustomItem: (idx) =>
+    set((s) => ({ customItems: s.customItems.filter((_, i) => i !== idx) })),
+
   selectedItems: new Set(),
   toggleItem: (idx) =>
     set((s) => {
@@ -219,7 +236,7 @@ export const useStore = create<StudioStore>((set, get) => ({
       else next.add(idx);
       return { selectedItems: next };
     }),
-  selectAllItems: () => set({ selectedItems: new Set(Array.from({ length: 54 }, (_, i) => i)) }),
+  selectAllItems: () => set((s) => ({ selectedItems: new Set(Array.from({ length: MASTER_CATALOG.length + s.customItems.length }, (_, i) => i)) })),
   deselectAllItems: () => set({ selectedItems: new Set() }),
 
   productionPlan: null,

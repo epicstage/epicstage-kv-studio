@@ -1,6 +1,6 @@
 // Dev proxy — CI 이미지 inlineData 포함해서 Gemini 직접 호출
 
-const WORKER_BASE = "https://epic-studio-api.pd-302.workers.dev";
+const WORKER_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
 
 export async function POST(req: Request) {
   const { messages, system, ciImages, ciDocs } = await req.json() as {
