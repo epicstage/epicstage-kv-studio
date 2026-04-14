@@ -1,5 +1,5 @@
 import type { Guideline, Version, ProductionPlanItem } from "./use-store";
-import { API_BASE, isLocal, CHAT_URL, IMAGE_URL } from "./config";
+import { API_BASE, isLocal, CHAT_URL, IMAGE_URL, RECRAFT_KV_URL, RECRAFT_STYLE_URL } from "./config";
 
 // ─── 시스템 인스트럭션 ────────────────────────────────────────────────────
 
@@ -496,6 +496,108 @@ REQUIREMENTS:
   if (!imagePart) throw new Error("KV 이미지 미포함 응답");
   const { mimeType, data: b64 } = imagePart.inlineData;
   return `data:${mimeType};base64,${b64}`;
+}
+
+// ─── Recraft Style 생성 (레퍼런스 이미지 → style_id) ──────────────────────
+
+export async function createRecraftStyle(
+  refImages: Array<{ mime: string; base64: string }>,
+  baseStyle: string = "digital_illustration"
+): Promise<string> {
+  const form = new FormData();
+  form.append("style", baseStyle);
+  for (const img of refImages.slice(0, 5)) {
+    const blob = await fetch(`data:${img.mime};base64,${img.base64}`).then((r) => r.blob());
+    form.append("files", blob, `ref.${img.mime.split("/")[1] || "png"}`);
+  }
+
+  const resp = await fetch(RECRAFT_STYLE_URL(), { method: "POST", body: form });
+  if (!resp.ok) throw new Error(`Recraft 스타일 생성 실패: ${resp.status}`);
+  const data = await resp.json() as any;
+  return data.style_id;
+}
+
+// ─── Recraft KV 생성 ────────────────────────────────────────────────────
+
+const RATIO_TO_SIZE: Record<string, string> = {
+  "16:9": "1820x1024",
+  "3:4": "1024x1365",
+  "1:1": "1024x1024",
+};
+
+export async function generateRecraftKV(
+  guideline: Guideline,
+  ratio: string,
+  kvName: string,
+  vector: boolean,
+  styleId?: string,
+  refImages?: Array<{ mime: string; base64: string }>,
+  refAnalysis?: string
+): Promise<{ imageUrl: string; isSvg: boolean }> {
+  // 레퍼런스 있고 styleId 없으면 자동 생성
+  let resolvedStyleId = styleId;
+  if (!resolvedStyleId && refImages?.length) {
+    resolvedStyleId = await createRecraftStyle(refImages);
+  }
+
+  // 가이드라인에서 컬러 추출
+  const colors: Array<{ rgb: [number, number, number] }> = [];
+  const palette = guideline.color_palette;
+  if (palette) {
+    for (const key of ["primary", "secondary", "accent"] as const) {
+      const hex = (palette as any)[key]?.hex;
+      if (hex) {
+        const r = parseInt(hex.slice(1, 3), 16);
+        const g = parseInt(hex.slice(3, 5), 16);
+        const b = parseInt(hex.slice(5, 7), 16);
+        if (!isNaN(r)) colors.push({ rgb: [r, g, b] });
+      }
+    }
+  }
+
+  // 프롬프트 구성
+  const motifs = guideline.graphic_motifs;
+  const mood = guideline.mood;
+  const prompt = [
+    `Professional event key visual for "${guideline.event_summary?.name || "Event"}".`,
+    kvName ? `Type: ${kvName}.` : "",
+    motifs?.style ? `Style: ${motifs.style}.` : "",
+    motifs?.elements?.length ? `Elements: ${motifs.elements.join(", ")}.` : "",
+    motifs?.texture ? `Texture: ${motifs.texture}.` : "",
+    mood?.keywords?.length ? `Mood: ${mood.keywords.join(", ")}.` : "",
+    mood?.tone ? `Tone: ${mood.tone}.` : "",
+    guideline.event_summary?.slogan ? `Slogan: "${guideline.event_summary.slogan}".` : "",
+    refAnalysis ? `Reference direction: ${refAnalysis}` : "",
+    "Bold, memorable, visually striking hero image. Production-ready print quality.",
+  ].filter(Boolean).join(" ");
+
+  const body: Record<string, unknown> = {
+    prompt,
+    vector,
+    size: RATIO_TO_SIZE[ratio] || "1820x1024",
+  };
+  if (resolvedStyleId) body.style_id = resolvedStyleId;
+  if (colors.length) body.colors = colors;
+
+  const resp = await fetch(RECRAFT_KV_URL(), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok) {
+    const errText = await resp.text();
+    throw new Error(`Recraft KV 생성 실패: ${resp.status} ${errText.slice(0, 200)}`);
+  }
+
+  const data = await resp.json() as any;
+  const isSvg = data.content_type === "image/svg+xml";
+  const mime = isSvg ? "image/svg+xml" : "image/png";
+  const imageUrl = data.b64
+    ? `data:${mime};base64,${data.b64}`
+    : data.url || "";
+
+  return { imageUrl, isSvg };
 }
 
 /**

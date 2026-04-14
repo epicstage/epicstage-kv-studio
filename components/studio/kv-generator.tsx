@@ -2,7 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useStore, type MasterKv } from "./use-store";
-import { generateMasterKV } from "./guideline-generator";
+import { generateMasterKV, generateRecraftKV } from "./guideline-generator";
 import { downloadTransparentPng, downloadAsSvg, downloadNoTextSvg, downloadTransparentSvg } from "./export-utils";
 import type { VectorizeProvider } from "./vectorize-service";
 import { KV_RATIOS } from "./constants";
@@ -24,7 +24,9 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
   const activeVersion = versions.find((v) => v.id === selectedVersionId);
   const masterKv = activeVersion?.masterKv;
 
+  type KvEngine = "gemini" | "recraft" | "recraft_vector";
   const [selectedRatio, setSelectedRatio] = useState<string>("16:9");
+  const [engine, setEngine] = useState<KvEngine>("gemini");
   const [generating, setGenerating] = useState(false);
   const [exportingPng, setExportingPng] = useState(false);
   const [exportingPngStage, setExportingPngStage] = useState<"notext" | "rembg" | "">("");
@@ -40,23 +42,40 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
     if (!activeVersion) return;
     setGenerating(true);
     setError("");
-    addLog(`마스터 KV 생성 중... (${selectedRatio})`);
+    const engineLabel = engine === "gemini" ? "Gemini" : engine === "recraft_vector" ? "Recraft Vector" : "Recraft";
+    addLog(`마스터 KV 생성 중... (${selectedRatio}, ${engineLabel})`);
     try {
       const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
-      const imageUrl = await generateMasterKV(
-        activeVersion.guideline,
-        selectedRatio,
-        selectedKvDef.name,
-        ci,
-        refAnalysis || undefined
-      );
+      let imageUrl: string;
+
+      if (engine === "gemini") {
+        imageUrl = await generateMasterKV(
+          activeVersion.guideline,
+          selectedRatio,
+          selectedKvDef.name,
+          ci,
+          refAnalysis || undefined
+        );
+      } else {
+        const result = await generateRecraftKV(
+          activeVersion.guideline,
+          selectedRatio,
+          selectedKvDef.name,
+          engine === "recraft_vector",
+          undefined,
+          ci.length > 0 ? ci : undefined,
+          refAnalysis || undefined
+        );
+        imageUrl = result.imageUrl;
+      }
+
       const kv: MasterKv = {
         imageUrl,
         ratio: selectedRatio,
         confirmed: false,
       };
       setMasterKv(activeVersion.id, kv);
-      addLog("마스터 KV 생성 완료", "ok");
+      addLog(`마스터 KV 생성 완료 (${engineLabel})`, "ok");
     } catch (err: any) {
       const msg = err.message || "알 수 없는 오류";
       setError(msg);
@@ -130,6 +149,31 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
               }`} />
               <span className="font-medium">{RATIO_LABELS[r.ratio as keyof typeof RATIO_LABELS]}</span>
               <span className="font-mono text-[10px] opacity-60">{r.ratio}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 생성 엔진 선택 */}
+      <div>
+        <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">생성 엔진</h3>
+        <div className="flex gap-2">
+          {([
+            { id: "gemini" as KvEngine, label: "Gemini", desc: "Nano Banana 2" },
+            { id: "recraft" as KvEngine, label: "Recraft", desc: "V4 래스터" },
+            { id: "recraft_vector" as KvEngine, label: "Recraft Vector", desc: "V4 SVG" },
+          ]).map((e) => (
+            <button
+              key={e.id}
+              onClick={() => setEngine(e.id)}
+              className={`flex flex-col items-center gap-1 rounded-xl border px-4 py-2.5 text-sm transition-all ${
+                engine === e.id
+                  ? "border-indigo-500/50 bg-indigo-500/10 text-indigo-300"
+                  : "border-gray-800 text-gray-500 hover:border-gray-700 hover:text-gray-300"
+              }`}
+            >
+              <span className="font-medium">{e.label}</span>
+              <span className="text-[10px] opacity-60">{e.desc}</span>
             </button>
           ))}
         </div>
