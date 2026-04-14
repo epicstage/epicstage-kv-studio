@@ -25,7 +25,7 @@ const GUIDELINE_SYSTEM = `너는 행사 브랜딩 전문 디자이너야.
   "layout_guide": { "kv": "", "banner_horizontal": "", "sns_square": "", "sns_story": "", "stage_backdrop": "", "entrance_banner": "", "photowall": "" },
   "logo_usage": { "primary_placement": "", "min_size": "", "clear_space": "", "on_dark": "", "on_light": "" },
   "mood": { "keywords": [], "tone": "" },
-  "recraft_prompt": "(English only. A single detailed paragraph describing the visual concept for an AI image generator. Include style, mood, colors, graphic elements, texture, composition — but NO text/typography instructions. This will be used as-is for Recraft V4 vector image generation. Be creative and specific to this event's unique identity.)",
+  "recraft_prompt": "(English only. One production-ready Recraft V4 prompt as a single detailed paragraph. Structure from global to local: 1) graphic format and medium (event backdrop, hero banner, stage visual), 2) core visual concept unique to this event, 3) main graphic motifs and shape logic with clear silhouettes, 4) composition and spatial hierarchy — describe foreground/background separation, negative space for later text overlay, balanced layout, 5) strict color system using the palette hex values as descriptive colors, 6) line/edge discipline and surface treatment, 7) lighting direction and mood atmosphere. For vector: prefer flat graphic fills, clean vector paths, bold simplified forms, consistent stroke behavior, limited palette. Avoid generic words alone like beautiful/modern/premium — be compositionally specific. CRITICAL: Do NOT mention any text, letters, words, logos, typography, dates, or captions — this is a pure visual artboard.)",
   "guide_items_to_visualize": [
     { "id": "color_palette_sheet", "label": "컬러 팔레트 시트", "description": "6색 팔레트 + 사용처 표기" },
     { "id": "motif_board", "label": "그래픽 모티프 보드", "description": "패턴, 텍스처, 아이콘 스타일" },
@@ -540,16 +540,34 @@ export async function generateRecraftKV(
   } else {
     const motifs = guideline.graphic_motifs;
     const mood = guideline.mood;
+    const palette = guideline.color_palette;
+    const colorDesc = palette ? [
+      (palette as any).primary?.hex ? `primary ${(palette as any).primary.hex}` : "",
+      (palette as any).secondary?.hex ? `secondary ${(palette as any).secondary.hex}` : "",
+      (palette as any).accent?.hex ? `accent ${(palette as any).accent.hex}` : "",
+    ].filter(Boolean).join(", ") : "";
+
     prompt = [
-      `Professional event key visual background artwork. No text, no letters, no typography.`,
-      kvName ? `Type: ${kvName}.` : "",
-      motifs?.style ? `Style: ${motifs.style}.` : "",
-      motifs?.elements?.length ? `Elements: ${motifs.elements.join(", ")}.` : "",
-      motifs?.texture ? `Texture: ${motifs.texture}.` : "",
-      mood?.keywords?.length ? `Mood: ${mood.keywords.join(", ")}.` : "",
+      // 1) Format
+      `Event key visual ${vector ? "vector" : "raster"} background artwork${kvName ? ` for ${kvName}` : ""}.`,
+      // 2) Style & motifs
+      motifs?.style ? `${motifs.style} graphic style.` : "",
+      motifs?.elements?.length ? `Main motifs: ${motifs.elements.join(", ")} with clear silhouettes and balanced composition.` : "",
+      // 3) Surface & line
+      vector
+        ? "Flat graphic fills, clean vector paths, bold simplified forms, consistent stroke behavior."
+        : (motifs?.texture ? `Surface: ${motifs.texture}.` : ""),
+      // 4) Color system
+      colorDesc ? `Strict color palette: ${colorDesc}.` : "",
+      // 5) Composition
+      "Poster-style layout with strong negative space in center for later text overlay. Clear foreground-background separation.",
+      // 6) Mood
+      mood?.keywords?.length ? `Atmosphere: ${mood.keywords.join(", ")}.` : "",
       mood?.tone ? `Tone: ${mood.tone}.` : "",
-      refAnalysis ? `Reference direction: ${refAnalysis}` : "",
-      "Bold, memorable, visually striking. Clean artboard without any text overlay. Production-ready print quality.",
+      // 7) Reference
+      refAnalysis ? `Visual direction: ${refAnalysis}` : "",
+      // Constraints
+      "Pure visual artboard — no text, no letters, no logos, no typography.",
     ].filter(Boolean).join(" ");
   }
 
