@@ -11,6 +11,7 @@ export interface Guideline {
   layout_guide: Record<string, string>;
   logo_usage: Record<string, string>;
   mood: { keywords: string[]; tone: string };
+  recraft_prompt?: string;
   guide_items_to_visualize: Array<{ id: string; label: string; description: string }>;
 }
 

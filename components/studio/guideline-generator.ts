@@ -25,6 +25,7 @@ const GUIDELINE_SYSTEM = `너는 행사 브랜딩 전문 디자이너야.
   "layout_guide": { "kv": "", "banner_horizontal": "", "sns_square": "", "sns_story": "", "stage_backdrop": "", "entrance_banner": "", "photowall": "" },
   "logo_usage": { "primary_placement": "", "min_size": "", "clear_space": "", "on_dark": "", "on_light": "" },
   "mood": { "keywords": [], "tone": "" },
+  "recraft_prompt": "(English only. A single detailed paragraph describing the visual concept for an AI image generator. Include style, mood, colors, graphic elements, texture, composition — but NO text/typography instructions. This will be used as-is for Recraft V4 vector image generation. Be creative and specific to this event's unique identity.)",
   "guide_items_to_visualize": [
     { "id": "color_palette_sheet", "label": "컬러 팔레트 시트", "description": "6색 팔레트 + 사용처 표기" },
     { "id": "motif_board", "label": "그래픽 모티프 보드", "description": "패턴, 텍스처, 아이콘 스타일" },
@@ -531,20 +532,26 @@ export async function generateRecraftKV(
     }
   }
 
-  // 프롬프트 구성 — 대지 전용 (텍스트 렌더링 없음, 한글 없음)
-  const motifs = guideline.graphic_motifs;
-  const mood = guideline.mood;
-  const prompt = [
-    `Professional event key visual background artwork. No text, no letters, no typography.`,
-    kvName ? `Type: ${kvName}.` : "",
-    motifs?.style ? `Style: ${motifs.style}.` : "",
-    motifs?.elements?.length ? `Elements: ${motifs.elements.join(", ")}.` : "",
-    motifs?.texture ? `Texture: ${motifs.texture}.` : "",
-    mood?.keywords?.length ? `Mood: ${mood.keywords.join(", ")}.` : "",
-    mood?.tone ? `Tone: ${mood.tone}.` : "",
-    refAnalysis ? `Reference direction: ${refAnalysis}` : "",
-    "Bold, memorable, visually striking. Clean artboard without any text overlay. Production-ready print quality.",
-  ].filter(Boolean).join(" ");
+  // 프롬프트: Gemini가 생성한 recraft_prompt 우선 사용, 없으면 폴백
+  const recraftPrompt = guideline.recraft_prompt;
+  let prompt: string;
+  if (recraftPrompt) {
+    prompt = `${recraftPrompt} No text, no letters, no typography on the image. Clean artboard only.`;
+  } else {
+    const motifs = guideline.graphic_motifs;
+    const mood = guideline.mood;
+    prompt = [
+      `Professional event key visual background artwork. No text, no letters, no typography.`,
+      kvName ? `Type: ${kvName}.` : "",
+      motifs?.style ? `Style: ${motifs.style}.` : "",
+      motifs?.elements?.length ? `Elements: ${motifs.elements.join(", ")}.` : "",
+      motifs?.texture ? `Texture: ${motifs.texture}.` : "",
+      mood?.keywords?.length ? `Mood: ${mood.keywords.join(", ")}.` : "",
+      mood?.tone ? `Tone: ${mood.tone}.` : "",
+      refAnalysis ? `Reference direction: ${refAnalysis}` : "",
+      "Bold, memorable, visually striking. Clean artboard without any text overlay. Production-ready print quality.",
+    ].filter(Boolean).join(" ");
+  }
 
   // V4 Vector는 비율 문자열 사용
   const size = vector
