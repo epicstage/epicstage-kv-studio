@@ -395,7 +395,7 @@ app.post("/api/search/smart-references", async (c) => {
     return true;
   }).slice(0, count);
 
-  return c.json({ images: unique, queries_used: queries });
+  return c.json({ results: unique, queries_used: queries });
 });
 
 // ─── SVG Vectorize Proxy (Vectorizer.ai / Recraft AI) ─────────────────────
