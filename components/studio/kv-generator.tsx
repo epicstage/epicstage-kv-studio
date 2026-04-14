@@ -24,7 +24,7 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
   const activeVersion = versions.find((v) => v.id === selectedVersionId);
   const masterKv = activeVersion?.masterKv;
 
-  type KvEngine = "gemini" | "recraft" | "recraft_vector";
+  type KvEngine = "gemini" | "recraft_vector";
   const [selectedRatio, setSelectedRatio] = useState<string>("16:9");
   const [engine, setEngine] = useState<KvEngine>("gemini");
   const [generating, setGenerating] = useState(false);
@@ -160,7 +160,6 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
         <div className="flex gap-2">
           {([
             { id: "gemini" as KvEngine, label: "Gemini", desc: "Nano Banana 2" },
-            { id: "recraft" as KvEngine, label: "Recraft", desc: "V4 래스터" },
             { id: "recraft_vector" as KvEngine, label: "Recraft Vector", desc: "V4 SVG" },
           ]).map((e) => (
             <button
