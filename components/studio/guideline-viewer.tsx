@@ -1,104 +1,11 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { generateGuideImage } from "./generation";
+import GuideImageCard from "./guide-image-card";
+import { SECTION_DEFAULTS, SECTION_IMAGE_ID, SECTION_KEYS } from "./guide-sections";
+import type { Version } from "./types";
 import { useStore } from "./use-store";
-import { generateGuideImage } from "./guideline-generator";
-import type { Version } from "./use-store";
-
-// 섹션별 guide item id + 기본 label/description 매핑
-const SECTION_IMAGE_ID: Record<string, string> = {
-  color_palette: "color_palette_sheet",
-  typography: "typography_sheet",
-  mood: "mood_board",
-  graphic_motifs: "motif_board",
-  layout_guide: "layout_sketches",
-  logo_usage: "logo_usage_sheet",
-};
-
-const SECTION_DEFAULTS: Record<string, { id: string; label: string; description: string }> = {
-  color_palette: { id: "color_palette_sheet", label: "컬러 팔레트 시트", description: "컬러 팔레트 예시 이미지" },
-  typography: { id: "typography_sheet", label: "타이포그래피 가이드 시트", description: "폰트 패밀리 + 사이즈 시스템" },
-  mood: { id: "mood_board", label: "무드보드", description: "무드보드 예시 이미지" },
-  graphic_motifs: { id: "motif_board", label: "모티프 보드", description: "그래픽 모티프 예시 이미지" },
-  layout_guide: { id: "layout_sketches", label: "레이아웃 스케치", description: "레이아웃 가이드 예시 이미지" },
-  logo_usage: { id: "logo_usage_sheet", label: "로고 사용 가이드", description: "배치·최소 크기·여백 규정" },
-};
-
-function InlineGuideImage({
-  version,
-  sectionKey,
-  autoGenerating,
-}: {
-  version: Version;
-  sectionKey: string;
-  autoGenerating?: boolean;
-}) {
-  const { setGuideImage, refAnalysis } = useStore();
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
-
-  const itemId = SECTION_IMAGE_ID[sectionKey];
-  const item = version.guideline?.guide_items_to_visualize?.find((i) => i.id === itemId)
-    || SECTION_DEFAULTS[sectionKey];
-  const imageUrl = version.guideImages?.[itemId];
-  const isLoading = loading || (autoGenerating && !imageUrl);
-
-  if (!item) return null;
-
-  async function handleGenerate() {
-    setLoading(true);
-    setError("");
-    try {
-      const { ciImages } = useStore.getState();
-      const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
-      const url = await generateGuideImage(version.guideline, item!, refAnalysis || undefined, ci);
-      setGuideImage(version.id, itemId, url);
-    } catch (e: any) {
-      setError(e.message);
-    }
-    setLoading(false);
-  }
-
-  return (
-    <div className="mt-4 rounded-lg border border-gray-800 overflow-hidden">
-      {imageUrl ? (
-        <div className="relative group">
-          <img src={imageUrl} alt={item.label} className="w-full" />
-          <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 bg-black/60 transition-opacity">
-            <button
-              onClick={handleGenerate}
-              disabled={isLoading}
-              className="rounded-lg bg-indigo-600 px-4 py-2 text-xs text-white hover:bg-indigo-500 disabled:opacity-50"
-            >
-              {isLoading ? "재생성 중..." : "재생성"}
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="flex items-center justify-between bg-gray-900/60 px-4 py-3">
-          <span className="text-xs text-gray-500">{item.label}</span>
-          {isLoading ? (
-            <div className="flex items-center gap-2">
-              <svg className="h-3.5 w-3.5 animate-spin text-indigo-400" fill="none" viewBox="0 0 24 24">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-              </svg>
-              <span className="text-xs text-indigo-400">생성 중...</span>
-            </div>
-          ) : (
-            <button
-              onClick={handleGenerate}
-              className="rounded border border-gray-700 px-3 py-1 text-xs text-gray-400 hover:border-indigo-500/50 hover:text-indigo-400"
-            >
-              예시 이미지 생성
-            </button>
-          )}
-          {error && <span className="ml-2 text-[10px] text-red-400">{error}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
 
 function ColorSwatch({
   label, hex, usage, onChangeHex, onDelete,
@@ -239,12 +146,10 @@ function ColorPaletteEditor({ version, autoGenerating }: { version: Version; aut
         ))}
       </div>
 
-      <InlineGuideImage version={version} sectionKey="color_palette" autoGenerating={autoGenerating} />
+      <GuideImageCard version={version} sectionKey="color_palette" autoGenerating={autoGenerating} />
     </div>
   );
 }
-
-const SECTION_KEYS = Object.keys(SECTION_IMAGE_ID);
 
 export default function GuidelineViewer({ version }: { version: Version }) {
   const g = version.guideline;
@@ -320,7 +225,7 @@ export default function GuidelineViewer({ version }: { version: Version }) {
           ))}
         </div>
         {g.mood.tone && <div className="mt-2 text-sm text-gray-500">톤: {g.mood.tone}</div>}
-        <InlineGuideImage version={version} sectionKey="mood" autoGenerating={autoGenerating} />
+        <GuideImageCard version={version} sectionKey="mood" autoGenerating={autoGenerating} />
       </div>
 
       {/* Graphic motifs */}
@@ -336,7 +241,7 @@ export default function GuidelineViewer({ version }: { version: Version }) {
             ))}
           </div>
         </div>
-        <InlineGuideImage version={version} sectionKey="graphic_motifs" autoGenerating={autoGenerating} />
+        <GuideImageCard version={version} sectionKey="graphic_motifs" autoGenerating={autoGenerating} />
       </div>
 
       {/* Layout guide */}
@@ -351,7 +256,7 @@ export default function GuidelineViewer({ version }: { version: Version }) {
               </div>
             ))}
           </div>
-          <InlineGuideImage version={version} sectionKey="layout_guide" autoGenerating={autoGenerating} />
+          <GuideImageCard version={version} sectionKey="layout_guide" autoGenerating={autoGenerating} />
         </div>
       )}
 
