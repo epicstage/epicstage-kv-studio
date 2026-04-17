@@ -46,12 +46,12 @@ export async function downloadTransparentPng(
   const { generateNoTextVersion } = await import("./guideline-generator");
   const noTextUrl = await generateNoTextVersion(imageDataUrl);
 
-  // Step 2: 배경 제거
+  // Step 2: 배경 제거 (Web Worker)
   onProgress?.("rembg");
-  const { removeBackground } = await import("@imgly/background-removal");
+  const { removeBackgroundOffMain } = await import("./rembg");
   const res = await fetch(noTextUrl);
   const inputBlob = await res.blob();
-  const resultBlob = await removeBackground(inputBlob);
+  const resultBlob = await removeBackgroundOffMain(inputBlob);
 
   // Step 3: 다운로드
   triggerDownload(resultBlob, filename);
@@ -107,11 +107,11 @@ export async function downloadTransparentSvg(
   const { generateNoTextVersion } = await import("./guideline-generator");
   const noTextUrl = await generateNoTextVersion(imageDataUrl);
 
-  // Step 2: 배경 제거
+  // Step 2: 배경 제거 (Web Worker)
   onProgress?.("rembg");
-  const { removeBackground } = await import("@imgly/background-removal");
+  const { removeBackgroundOffMain } = await import("./rembg");
   const inputBlob = await (await fetch(noTextUrl)).blob();
-  const transparentBlob = await removeBackground(inputBlob);
+  const transparentBlob = await removeBackgroundOffMain(inputBlob);
 
   // Step 3: 투명 PNG → data URL → SVG
   onProgress?.("vectorize");
