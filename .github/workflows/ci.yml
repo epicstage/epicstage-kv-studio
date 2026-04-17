@@ -44,6 +44,10 @@ jobs:
         env:
           NODE_ENV: production
 
+      - name: Workers typecheck
+        working-directory: workers
+        run: pnpm install --frozen-lockfile && pnpm run type-check
+
   smoke:
     name: Playwright smoke
     runs-on: ubuntu-latest
