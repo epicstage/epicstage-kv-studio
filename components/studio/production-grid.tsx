@@ -8,6 +8,7 @@ import {
 } from "./generation";
 import PlanItemCard from "./plan-item-card";
 import ProductionCard from "./production-card";
+import { useToast } from "./toast";
 import type { Production, ProductionPlanItem } from "./types";
 import { useStore } from "./use-store";
 
@@ -30,6 +31,7 @@ export default function ProductionGrid() {
   const activeVersion = useStore((s) =>
     s.versions.find((v) => v.id === s.selectedVersionId),
   );
+  const toast = useToast();
   const [planGenerating, setPlanGenerating] = useState(false);
 
   // Pruning: if the catalog selection shrinks, drop any plan/production rows
@@ -158,10 +160,32 @@ export default function ProductionGrid() {
 
     addLog(`${newProds.length}종 이미지 생성 시작 (2개씩)`);
 
+    const controller = new AbortController();
+    const total = newProds.length;
+    let completed = 0;
+    let cancelled = false;
+
+    const toastId = toast.show({
+      kind: "progress",
+      title: `이미지 생성 중 (0 / ${total})`,
+      description: "AI가 순차적으로 렌더링합니다",
+      progress: 0,
+      duration: null,
+      action: {
+        label: "중단",
+        onClick: () => {
+          cancelled = true;
+          controller.abort();
+        },
+      },
+    });
+
     for (let i = 0; i < newProds.length; i += IMAGE_BATCH_SIZE) {
+      if (controller.signal.aborted) break;
       const batch = newProds.slice(i, i + IMAGE_BATCH_SIZE);
       await Promise.all(
         batch.map(async (prod) => {
+          if (controller.signal.aborted) return;
           const { updateProduction: up } = useStore.getState();
           up(prod.id, { status: "generating" });
           try {
@@ -175,12 +199,41 @@ export default function ProductionGrid() {
             up(prod.id, { status: "done", imageUrl });
             addLog(`${prod.name} 완료`, "ok");
           } catch (err) {
+            if (controller.signal.aborted) return;
             const message = err instanceof Error ? err.message : String(err);
             up(prod.id, { status: "error", error: message });
             addLog(`${prod.name} 실패: ${message}`, "err");
+          } finally {
+            if (!controller.signal.aborted) {
+              completed += 1;
+              toast.update(toastId, {
+                title: `이미지 생성 중 (${completed} / ${total})`,
+                progress: total > 0 ? completed / total : 1,
+              });
+            }
           }
         }),
       );
+    }
+
+    if (cancelled) {
+      toast.update(toastId, {
+        kind: "info",
+        title: `생성 중단됨 (${completed} / ${total} 완료)`,
+        description: "진행 중인 항목만 취소됐고 완료본은 유지됩니다",
+        progress: undefined,
+        action: undefined,
+        duration: 4000,
+      });
+    } else {
+      toast.update(toastId, {
+        kind: "success",
+        title: `생성 완료 (${completed} / ${total})`,
+        description: undefined,
+        progress: 1,
+        action: undefined,
+        duration: 3000,
+      });
     }
 
     setProcessing(false);

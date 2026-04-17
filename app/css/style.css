@@ -44,6 +44,29 @@
   --text-7xl--line-height: 1;
   --text-7xl--letter-spacing: -0.0268em;
 
+  /* ─── Semantic color tokens ─────────────────────────────────────────── */
+  /* Surfaces: dark-mode base layers — use instead of ad-hoc bg-gray-950 etc.
+     Callers opt in via bg-surface-0 / bg-surface-1 / bg-surface-2. */
+  --color-surface-0: var(--color-gray-950);
+  --color-surface-1: var(--color-gray-900);
+  --color-surface-2: var(--color-gray-800);
+  --color-border-subtle: var(--color-gray-800);
+  --color-border-strong: var(--color-gray-700);
+
+  /* Text roles */
+  --color-text-primary: var(--color-white);
+  --color-text-secondary: var(--color-gray-300);
+  --color-text-muted: var(--color-gray-500);
+  --color-text-faint: var(--color-gray-600);
+
+  /* Brand + status */
+  --color-brand: var(--color-indigo-500);
+  --color-brand-strong: var(--color-indigo-600);
+  --color-brand-soft: color-mix(in oklab, var(--color-indigo-500) 10%, transparent);
+  --color-success: var(--color-emerald-500);
+  --color-danger: var(--color-red-500);
+  --color-warn: var(--color-orange-500);
+
   --animate-shine: shine 5s ease-in-out 500ms infinite;
   --animate-gradient: gradient 6s linear infinite;
 
