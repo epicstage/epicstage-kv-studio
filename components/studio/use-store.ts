@@ -2,69 +2,26 @@
 
 import { create } from "zustand";
 import { MASTER_CATALOG } from "./constants";
+import type {
+  CatalogItem,
+  ColorEntry,
+  DocData,
+  LogEntry,
+  MasterKv,
+  NamedImageData,
+  Production,
+  ProductionPlanItem,
+  Version,
+} from "./types";
 
-export interface Guideline {
-  event_summary: { name: string; name_en: string; date: string; venue: string; organizer: string; theme: string; slogan: string };
-  color_palette: Record<string, { hex: string; usage: string }>;
-  typography: Record<string, { font: string; size_range: string; note: string }>;
-  graphic_motifs: { style: string; elements: string[]; texture: string; icon_style: string };
-  layout_guide: Record<string, string>;
-  logo_usage: Record<string, string>;
-  mood: { keywords: string[]; tone: string };
-  recraft_prompt?: string;
-  guide_items_to_visualize: Array<{ id: string; label: string; description: string }>;
-}
-
-export interface MasterKv {
-  imageUrl: string;       // data:image/... base64
-  ratio: string;          // "16:9" | "3:4" | "1:1"
-  confirmed: boolean;
-  uploadedByUser?: boolean;
-}
-
-export interface Version {
-  id: string;
-  num: number;
-  label: string;
-  guideline: Guideline;
-  preview: { colors: string[]; mood: string[]; tone: string };
-  guideImages: Record<string, string>; // id → base64 data URL
-  masterKv?: MasterKv;
-}
-
-export interface ProductionPlanItem {
-  num: number;
-  name: string;
-  ratio: string;
-  headline: string;
-  subtext: string | null;
-  layout_note: string;
-  image_prompt: string;
-}
-
-export interface Production {
-  id: string;
-  name: string;
-  ratio: string;
-  category: string;
-  status: "pending" | "generating" | "done" | "error";
-  imageUrl?: string;
-  error?: string;
-  headline?: string;
-  subtext?: string | null;
-  layoutNote?: string;
-  imagePrompt?: string;
-  renderInstruction?: string;
-  fullPrompt?: string;
-  stale?: boolean; // KV 변경 후 재생성 필요
-  // no-text version
-  noTextStatus?: "pending" | "generating" | "done" | "error";
-  noTextUrl?: string;
-  noTextError?: string;
-  // upscale
-  upscaleStatus?: "pending" | "done" | "error";
-  upscaleUrl?: string;
-}
+export type {
+  ColorEntry,
+  Guideline,
+  MasterKv,
+  Production,
+  ProductionPlanItem,
+  Version,
+} from "./types";
 
 interface StudioStore {
   step: 1 | 2 | 3 | 4;
@@ -77,20 +34,20 @@ interface StudioStore {
   setEventInfo: (v: string) => void;
   styleOverride: string;
   setStyleOverride: (v: string) => void;
-  ciImages: Array<{ id: string; name: string; mime: string; base64: string }>;
-  addCiImage: (img: { id: string; name: string; mime: string; base64: string }) => void;
+  ciImages: NamedImageData[];
+  addCiImage: (img: NamedImageData) => void;
   removeCiImage: (id: string) => void;
 
-  ciDocs: Array<{ id: string; name: string; mime: string; base64: string }>;
-  addCiDoc: (doc: { id: string; name: string; mime: string; base64: string }) => void;
+  ciDocs: DocData[];
+  addCiDoc: (doc: DocData) => void;
   removeCiDoc: (id: string) => void;
 
   selectedRefs: string[];
   toggleRef: (url: string) => void;
 
   // 직접 업로드한 레퍼런스 이미지
-  refFiles: Array<{ id: string; name: string; mime: string; base64: string }>;
-  addRefFile: (f: { id: string; name: string; mime: string; base64: string }) => void;
+  refFiles: NamedImageData[];
+  addRefFile: (f: NamedImageData) => void;
   removeRefFile: (id: string) => void;
 
   // Gemini 분석 결과
@@ -104,13 +61,13 @@ interface StudioStore {
   setActiveVersion: (id: string) => void;
   selectVersionForStep3: (id: string) => void;
   setGuideImage: (verId: string, itemId: string, dataUrl: string) => void;
-  updateColorPalette: (verId: string, palette: Record<string, { hex: string; usage: string }>) => void;
+  updateColorPalette: (verId: string, palette: Record<string, ColorEntry>) => void;
   setMasterKv: (verId: string, kv: MasterKv) => void;
   confirmMasterKv: (verId: string) => void;
   markVariationsStale: (verId: string) => void;
 
-  customItems: Array<{ name: string; ratio: string; category: string }>;
-  addCustomItem: (item: { name: string; ratio: string; category: string }) => void;
+  customItems: CatalogItem[];
+  addCustomItem: (item: CatalogItem) => void;
   removeCustomItem: (idx: number) => void;
 
   selectedItems: Set<number>;
@@ -128,7 +85,7 @@ interface StudioStore {
   isProcessing: boolean;
   setProcessing: (v: boolean) => void;
 
-  logs: Array<{ time: string; message: string; type?: string }>;
+  logs: LogEntry[];
   addLog: (msg: string, type?: string) => void;
 }
 

@@ -1,66 +1,167 @@
-const API_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
+// Cloudflare Workers backend base.
+export const API_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
 
-export async function searchReferences(query: string, eventType?: string, count = 12) {
-  const resp = await fetch(`${API_BASE}/api/search/smart-references`, {
+export interface FetchJsonOptions extends Omit<RequestInit, "body" | "headers"> {
+  headers?: HeadersInit;
+  json?: unknown;
+  body?: BodyInit;
+  /** Abort signal to cancel the request. */
+  signal?: AbortSignal;
+  /** Millisecond timeout. Defaults to no timeout. */
+  timeoutMs?: number;
+}
+
+export class ApiError extends Error {
+  status: number;
+  statusText: string;
+  body: string | undefined;
+  constructor(status: number, statusText: string, message: string, body?: string) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+    this.statusText = statusText;
+    this.body = body;
+  }
+}
+
+/**
+ * Unified JSON fetch. Adds JSON headers when `json` is provided, supports
+ * AbortController composition via the `signal` option, and an optional
+ * `timeoutMs` that auto-aborts. Errors are normalized to `ApiError` so callers
+ * get status + body for display.
+ */
+export async function fetchJson<T = unknown>(
+  url: string,
+  opts: FetchJsonOptions = {},
+): Promise<T> {
+  const { json, body, headers, signal, timeoutMs, ...rest } = opts;
+
+  const finalHeaders = new Headers(headers);
+  let finalBody = body;
+  if (json !== undefined) {
+    finalHeaders.set("Content-Type", "application/json");
+    finalBody = JSON.stringify(json);
+  }
+
+  const controller = new AbortController();
+  const onAbort = () => controller.abort(signal?.reason);
+  if (signal) {
+    if (signal.aborted) controller.abort(signal.reason);
+    else signal.addEventListener("abort", onAbort, { once: true });
+  }
+  const timeoutId =
+    timeoutMs != null ? setTimeout(() => controller.abort(new Error("timeout")), timeoutMs) : null;
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      ...rest,
+      body: finalBody,
+      headers: finalHeaders,
+      signal: controller.signal,
+    });
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+    signal?.removeEventListener("abort", onAbort);
+  }
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new ApiError(
+      res.status,
+      res.statusText,
+      `${rest.method || "GET"} ${url} failed: ${res.status} ${res.statusText}`,
+      text,
+    );
+  }
+
+  if (res.status === 204) return undefined as T;
+  const contentType = res.headers.get("content-type") || "";
+  if (contentType.includes("application/json")) return (await res.json()) as T;
+  return (await res.text()) as unknown as T;
+}
+
+// ---------- Typed endpoint helpers ----------
+
+export interface SearchReferencesResponse {
+  images?: Array<{ url: string; title?: string; source?: string }>;
+  [key: string]: unknown;
+}
+
+export function searchReferences(
+  query: string,
+  eventType?: string,
+  count = 12,
+  signal?: AbortSignal,
+): Promise<SearchReferencesResponse> {
+  return fetchJson<SearchReferencesResponse>(`${API_BASE}/api/search/smart-references`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    json: {
       event_type: eventType || undefined,
       theme_keywords: query.split(/\s+/).filter(Boolean),
       count,
-    }),
+    },
+    signal,
   });
-  if (!resp.ok) throw new Error(`Search failed: ${resp.status}`);
-  return resp.json();
 }
 
-export async function analyzeStyle(imageUrls: string[], projectId?: string) {
-  const resp = await fetch(`${API_BASE}/api/analyze/style`, {
+export function analyzeStyle(
+  imageUrls: string[],
+  projectId?: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchJson(`${API_BASE}/api/analyze/style`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ image_urls: imageUrls, project_id: projectId }),
+    json: { image_urls: imageUrls, project_id: projectId },
+    signal,
   });
-  if (!resp.ok) throw new Error(`Analyze failed: ${resp.status}`);
-  return resp.json();
 }
 
-export async function sendChat(messages: Array<{ role: string; content: string }>, context?: any) {
-  const resp = await fetch(`${API_BASE}/api/chat`, {
+export function sendChat(
+  messages: Array<{ role: string; content: string }>,
+  context?: unknown,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchJson(`${API_BASE}/api/chat`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ messages, context }),
+    json: { messages, context },
+    signal,
   });
-  if (!resp.ok) throw new Error(`Chat failed: ${resp.status}`);
-  return resp.json();
 }
 
-export async function generate(contents: any, model?: string) {
-  const resp = await fetch(`${API_BASE}/api/generate`, {
+export function generate(
+  contents: unknown,
+  model?: string,
+  signal?: AbortSignal,
+): Promise<unknown> {
+  return fetchJson(`${API_BASE}/api/generate`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ contents, model }),
+    json: { contents, model },
+    signal,
   });
-  if (!resp.ok) throw new Error(`Generate failed: ${resp.status}`);
-  return resp.json();
 }
 
-export async function uploadImage(file: Blob, filename = "image.png") {
+export async function uploadImage(
+  file: Blob,
+  filename = "image.png",
+  signal?: AbortSignal,
+): Promise<unknown> {
   const formData = new FormData();
   formData.append("file", file, filename);
-  const resp = await fetch(`${API_BASE}/api/upload`, { method: "POST", body: formData });
-  if (!resp.ok) throw new Error(`Upload failed: ${resp.status}`);
-  return resp.json();
+  return fetchJson(`${API_BASE}/api/upload`, { method: "POST", body: formData, signal });
 }
 
-export async function requestUpscale(file: Blob, scale = 4) {
+export async function requestUpscale(
+  file: Blob,
+  scale = 4,
+  signal?: AbortSignal,
+): Promise<unknown> {
   const formData = new FormData();
   formData.append("file", file, "image.png");
   formData.append("scale", String(scale));
-  const resp = await fetch(`${API_BASE}/api/upscale`, { method: "POST", body: formData });
-  if (!resp.ok) throw new Error(`Upscale failed: ${resp.status}`);
-  return resp.json();
+  return fetchJson(`${API_BASE}/api/upscale`, { method: "POST", body: formData, signal });
 }
 
-export function imageUrl(key: string) {
+export function imageUrl(key: string): string {
   return `${API_BASE}/api/images/${encodeURIComponent(key)}`;
 }

@@ -3,6 +3,8 @@ node_modules
 out
 dist
 public
+playwright-report
+test-results
 *.lock
 pnpm-lock.yaml
 package-lock.json
