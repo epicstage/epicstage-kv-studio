@@ -87,22 +87,29 @@ async function vectorizeWithRecraft(image: File): Promise<Response> {
     return new Response(`Recraft error: ${err}`, { status: resp.status });
   }
 
-  const data = (await resp.json()) as any;
-  const b64 = data?.data?.[0]?.b64_json;
-  if (!b64) {
-    const url = data?.data?.[0]?.url;
-    if (url) {
-      const svgResp = await fetch(url);
-      const svg = await svgResp.text();
-      return new Response(svg, {
-        headers: { "Content-Type": "image/svg+xml" },
-      });
-    }
-    return new Response("Recraft: no SVG in response", { status: 500 });
+  // Current Recraft shape: { image: { b64_json | url }, credits }.
+  // Legacy shape: { data: [{ b64_json | url }] } — kept as fallback.
+  type Payload = { b64_json?: string; url?: string; svg?: string };
+  const data = (await resp.json()) as {
+    image?: Payload;
+    data?: Payload[];
+  };
+  const payload: Payload | undefined = data?.image ?? data?.data?.[0];
+  if (payload?.b64_json) {
+    return new Response(atob(payload.b64_json), {
+      headers: { "Content-Type": "image/svg+xml" },
+    });
   }
-
-  const svg = atob(b64);
-  return new Response(svg, {
-    headers: { "Content-Type": "image/svg+xml" },
-  });
+  if (payload?.svg) {
+    return new Response(payload.svg, {
+      headers: { "Content-Type": "image/svg+xml" },
+    });
+  }
+  if (payload?.url) {
+    const svgResp = await fetch(payload.url);
+    return new Response(await svgResp.text(), {
+      headers: { "Content-Type": "image/svg+xml" },
+    });
+  }
+  return new Response("Recraft: no SVG in response", { status: 500 });
 }

@@ -95,14 +95,22 @@ imageRoutes.post("/api/vectorize", async (c) => {
       const err = await resp.text();
       return c.text(`Recraft error: ${err}`, resp.status as 400);
     }
-    const data = (await resp.json()) as { data?: Array<{ b64_json?: string; url?: string }> };
-    const b64 = data?.data?.[0]?.b64_json;
-    if (b64) {
-      return c.text(atob(b64), 200, { "Content-Type": "image/svg+xml" });
+    // Recraft vectorize returns { image: { b64_json | url }, credits } in the
+    // current API; older shape { data: [{ b64_json | url }] } kept as fallback.
+    type Payload = { b64_json?: string; url?: string; svg?: string };
+    const data = (await resp.json()) as {
+      image?: Payload;
+      data?: Payload[];
+    };
+    const payload: Payload | undefined = data?.image ?? data?.data?.[0];
+    if (payload?.b64_json) {
+      return c.text(atob(payload.b64_json), 200, { "Content-Type": "image/svg+xml" });
     }
-    const url = data?.data?.[0]?.url;
-    if (url) {
-      const svgResp = await fetch(url);
+    if (payload?.svg) {
+      return c.text(payload.svg, 200, { "Content-Type": "image/svg+xml" });
+    }
+    if (payload?.url) {
+      const svgResp = await fetch(payload.url);
       return c.text(await svgResp.text(), 200, { "Content-Type": "image/svg+xml" });
     }
     return c.text("Recraft: no SVG in response", 500);
