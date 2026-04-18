@@ -1,8 +1,34 @@
 import { IMAGE_URL, isLocal } from "../../config";
 import type { Guideline, ImageData } from "../../types";
 import { extractDesignSystemForProduction } from "../design-system";
-import { extractFirstImage, toInlineDataParts, type GeminiResponse } from "../gemini-utils";
+import {
+  extractFirstImage,
+  splitDataUrl,
+  toInlineDataParts,
+  type GeminiResponse,
+  type InlineDataPart,
+} from "../gemini-utils";
 import { PRINT_SPEC_INSTRUCTION, PRODUCTION_SYSTEM } from "../prompts";
+
+const MAX_GUIDE_IMAGES = 4;
+
+function guideImagesToParts(guideImages?: Record<string, string>): InlineDataPart[] {
+  if (!guideImages) return [];
+  const parts: InlineDataPart[] = [];
+  for (const url of Object.values(guideImages)) {
+    if (!url) continue;
+    const split = splitDataUrl(url);
+    if (!split) continue;
+    parts.push({ inlineData: { mimeType: split.mime, data: split.base64 } });
+    if (parts.length >= MAX_GUIDE_IMAGES) break;
+  }
+  return parts;
+}
+
+function guideImagesToUrls(guideImages?: Record<string, string>): string[] {
+  if (!guideImages) return [];
+  return Object.values(guideImages).filter(Boolean).slice(0, MAX_GUIDE_IMAGES);
+}
 
 /**
  * Build the user-facing prompt for the master KV. Pure function — exposed
@@ -30,6 +56,7 @@ ${guideline.event_summary?.slogan ? `- SLOGAN: "${guideline.event_summary.slogan
 === VISUAL STYLE ===
 This is the MASTER Key Visual. Make it bold, memorable, and visually striking.
 All graphic motifs, colors, and mood from the design system must be fully expressed.
+Attached guide images (color palette, moodboard, motif board, layout sketches) define the visual direction — extract palette, graphic motifs, and compositional language from them and apply faithfully.
 ${refAnalysis ? `Reference direction: ${refAnalysis}` : ""}
 
 RENDERING:
@@ -53,6 +80,7 @@ export async function generateMasterKV(
   kvName: string,
   ciImages?: ImageData[],
   refAnalysis?: string,
+  guideImages?: Record<string, string>,
 ): Promise<string> {
   const { system, user: userContent } = buildMasterKvPrompt(guideline, ratio, kvName, refAnalysis);
 
@@ -66,7 +94,7 @@ export async function generateMasterKV(
         prompt: userContent,
         system,
         ciImages: ciImages ?? [],
-        guideImageUrls: [],
+        guideImageUrls: guideImagesToUrls(guideImages),
       }),
     });
     if (!resp.ok) throw new Error(`KV 생성 실패: ${resp.status}`);
@@ -77,6 +105,7 @@ export async function generateMasterKV(
 
   const parts = [
     ...toInlineDataParts(ciImages ?? [], 3),
+    ...guideImagesToParts(guideImages),
     { text: `${system}\n\n---\n\n${userContent}` },
   ];
   const resp = await fetch(url, {
