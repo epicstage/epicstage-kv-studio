@@ -1,39 +1,17 @@
 import { IMAGE_URL, isLocal } from "../../config";
 import type { Guideline } from "../../types";
 import { extractDesignSystemForProduction } from "../design-system";
-import {
-  extractFirstImage,
-  splitDataUrl,
-  type GeminiResponse,
-  type InlineDataPart,
-} from "../gemini-utils";
+import { extractFirstImage, type GeminiResponse } from "../gemini-utils";
 import { PRINT_SPEC_INSTRUCTION, PRODUCTION_SYSTEM } from "../prompts";
 
-const MAX_GUIDE_IMAGES = 4;
 const DEFAULT_BATCH_SIZE = 2;
-
-function guideImagesToParts(guideImages?: Record<string, string>): InlineDataPart[] {
-  if (!guideImages) return [];
-  const parts: InlineDataPart[] = [];
-  for (const url of Object.values(guideImages)) {
-    if (!url) continue;
-    const split = splitDataUrl(url);
-    if (!split) continue;
-    parts.push({ inlineData: { mimeType: split.mime, data: split.base64 } });
-    if (parts.length >= MAX_GUIDE_IMAGES) break;
-  }
-  return parts;
-}
-
-function guideImagesToUrls(guideImages?: Record<string, string>): string[] {
-  if (!guideImages) return [];
-  return Object.values(guideImages).filter(Boolean).slice(0, MAX_GUIDE_IMAGES);
-}
 
 /**
  * Build the prompt for an SVG-ready KV candidate. The output is intended to be
  * fed into a vectorizer (Arrow / Recraft trace), so the prompt aggressively
- * constrains Gemini to flat, traceable imagery with no text.
+ * constrains Gemini to flat, traceable imagery with no text. This path is
+ * JSON-only — no inline reference images are sent, so Gemini has to derive
+ * everything from the design system text.
  */
 export function buildSvgReadyKvPrompt(
   guideline: Guideline,
@@ -64,9 +42,9 @@ No photography, no 3D render, no painterly textures.
 - Shapes: geometric primitives or bold silhouettes — avoid detail smaller than ~3% of canvas
 - Background: single solid color, full-bleed, no vignette
 
-=== REFERENCES ===
-Guide sheets attached (color palette, moodboard, motif board, layout sketches).
-Extract palette and motif language, REBUILD in flat vector style.
+=== DIRECTION ===
+Derive palette, motif language, and composition entirely from the design system above.
+No reference images are attached — invent the imagery from the JSON guideline alone.
 ${refAnalysis ? `Reference direction: ${refAnalysis}` : ""}
 
 RENDERING:
@@ -81,15 +59,14 @@ REQUIREMENTS:
 }
 
 /**
- * Generate a single SVG-ready KV candidate via Gemini. Unlike `generateMasterKV`,
- * this path deliberately omits CI images — CI logos are raster-noisy and tend to
- * push Gemini back toward photographic style. Guide images still go through.
+ * Generate a single SVG-ready KV candidate via Gemini. JSON-only — no CI, no
+ * guide images. The design system text inside the prompt is the sole input
+ * alongside the system instruction.
  */
 export async function generateSvgReadyKV(
   guideline: Guideline,
   ratio: string,
   kvName: string,
-  guideImages?: Record<string, string>,
   refAnalysis?: string,
 ): Promise<string> {
   const { system, user: userContent } = buildSvgReadyKvPrompt(guideline, ratio, kvName, refAnalysis);
@@ -104,7 +81,7 @@ export async function generateSvgReadyKV(
         prompt: userContent,
         system,
         ciImages: [],
-        guideImageUrls: guideImagesToUrls(guideImages),
+        guideImageUrls: [],
       }),
     });
     if (!resp.ok) throw new Error(`SVG용 KV 생성 실패: ${resp.status}`);
@@ -113,10 +90,7 @@ export async function generateSvgReadyKV(
     return data.imageUrl ?? "";
   }
 
-  const parts = [
-    ...guideImagesToParts(guideImages),
-    { text: `${system}\n\n---\n\n${userContent}` },
-  ];
+  const parts = [{ text: `${system}\n\n---\n\n${userContent}` }];
 
   const resp = await fetch(url, {
     method: "POST",
@@ -145,13 +119,12 @@ export async function generateSvgReadyKvBatch(
   guideline: Guideline,
   ratio: string,
   kvName: string,
-  guideImages?: Record<string, string>,
   refAnalysis?: string,
   count: number = DEFAULT_BATCH_SIZE,
 ): Promise<string[]> {
   const results = await Promise.allSettled(
     Array.from({ length: count }, () =>
-      generateSvgReadyKV(guideline, ratio, kvName, guideImages, refAnalysis),
+      generateSvgReadyKV(guideline, ratio, kvName, refAnalysis),
     ),
   );
   const urls: string[] = [];

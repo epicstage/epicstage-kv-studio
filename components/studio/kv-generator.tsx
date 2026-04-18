@@ -133,7 +133,6 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
         activeVersion.guideline,
         selectedRatio,
         selectedKvDef.name,
-        activeVersion.guideImages,
         refAnalysis || undefined,
         svgBatchCount,
       );
