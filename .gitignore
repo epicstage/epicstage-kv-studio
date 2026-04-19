@@ -1,4 +1,7 @@
 node_modules/
+# This project uses pnpm; npm/yarn lockfiles are accidents.
+package-lock.json
+yarn.lock
 .wrangler/
 .dev.vars
 dist/
