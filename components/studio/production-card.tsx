@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   generateNoTextVersion,
   generateProductionImage,
@@ -26,11 +26,32 @@ export default function ProductionCard({ prod, onDelete }: Props) {
   );
   const [svgProvider, setSvgProvider] = useState<VectorizeProvider>("arrow");
   const [vectorizing, setVectorizing] = useState(false);
-  const suggested = useMemo(() => suggestDimensions(prod.ratio, "2K"), [prod.ratio]);
-  const [targetW, setTargetW] = useState<string>(String(suggested.w));
-  const [targetH, setTargetH] = useState<string>(String(suggested.h));
   const [topazModel, setTopazModel] = useState<TopazModel>("Standard V2");
   const [cropOpen, setCropOpen] = useState(false);
+
+  // 배수(scale) 모드가 기본. "커스텀" 토글 시 임의 W×H 입력이 노출됨.
+  const [scale, setScale] = useState<number>(2);
+  const [customMode, setCustomMode] = useState(false);
+  const suggested = useMemo(() => suggestDimensions(prod.ratio, "2K"), [prod.ratio]);
+  const [customW, setCustomW] = useState<string>(String(suggested.w));
+  const [customH, setCustomH] = useState<string>(String(suggested.h));
+
+  // 원본 자연 해상도 측정 — 배수 계산/표시에 사용
+  const [sourceDims, setSourceDims] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    if (!prod.imageUrl) {
+      setSourceDims(null);
+      return;
+    }
+    const img = new Image();
+    img.onload = () => setSourceDims({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = prod.imageUrl;
+  }, [prod.imageUrl]);
+
+  const derivedW = sourceDims ? sourceDims.w * scale : 0;
+  const derivedH = sourceDims ? sourceDims.h * scale : 0;
+  const effectiveW = customMode ? Number(customW) : derivedW;
+  const effectiveH = customMode ? Number(customH) : derivedH;
 
   async function handleRegenerate() {
     if (!activeVersion) return;
@@ -71,11 +92,12 @@ export default function ProductionCard({ prod, onDelete }: Props) {
 
   async function handleUpscale() {
     if (!prod.imageUrl) return;
-    const w = Number(targetW);
-    const h = Number(targetH);
+    const w = effectiveW;
+    const h = effectiveH;
     if (!Number.isFinite(w) || !Number.isFinite(h) || w < 1 || h < 1) {
       updateProduction(prod.id, {
         upscaleStatus: "error",
+        upscaleError: "유효한 목표 크기가 필요합니다",
       });
       return;
     }
@@ -239,24 +261,47 @@ export default function ProductionCard({ prod, onDelete }: Props) {
             <div className="space-y-2 rounded-lg border border-gray-800 bg-gray-950/50 px-3 py-2">
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-500">업스케일 (Topaz)</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={targetW}
-                  onChange={(e) => setTargetW(e.target.value)}
-                  aria-label="목표 폭(px)"
-                  className="w-20 rounded border border-gray-800 bg-gray-950 px-2 py-1 text-right text-[10px] text-gray-300"
-                />
-                <span className="text-[10px] text-gray-600">×</span>
-                <input
-                  type="number"
-                  min={1}
-                  value={targetH}
-                  onChange={(e) => setTargetH(e.target.value)}
-                  aria-label="목표 높이(px)"
-                  className="w-20 rounded border border-gray-800 bg-gray-950 px-2 py-1 text-right text-[10px] text-gray-300"
-                />
-                <span className="text-[10px] text-gray-600">px</span>
+                {!customMode ? (
+                  <>
+                    <select
+                      value={scale}
+                      onChange={(e) => setScale(Number(e.target.value))}
+                      aria-label="배수"
+                      className="rounded border border-gray-800 bg-gray-950 px-2 py-1 text-[10px] text-gray-300"
+                    >
+                      <option value={2}>2×</option>
+                      <option value={3}>3×</option>
+                      <option value={4}>4×</option>
+                      <option value={6}>6×</option>
+                    </select>
+                    <span className="font-mono text-[10px] text-gray-500">
+                      {sourceDims
+                        ? `${sourceDims.w} × ${sourceDims.h} → ${derivedW} × ${derivedH} px`
+                        : "원본 측정 중…"}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <input
+                      type="number"
+                      min={1}
+                      value={customW}
+                      onChange={(e) => setCustomW(e.target.value)}
+                      aria-label="목표 폭(px)"
+                      className="w-20 rounded border border-gray-800 bg-gray-950 px-2 py-1 text-right text-[10px] text-gray-300"
+                    />
+                    <span className="text-[10px] text-gray-600">×</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={customH}
+                      onChange={(e) => setCustomH(e.target.value)}
+                      aria-label="목표 높이(px)"
+                      className="w-20 rounded border border-gray-800 bg-gray-950 px-2 py-1 text-right text-[10px] text-gray-300"
+                    />
+                    <span className="text-[10px] text-gray-600">px</span>
+                  </>
+                )}
                 <button
                   onClick={handleUpscale}
                   disabled={prod.upscaleStatus === "pending"}
@@ -274,6 +319,15 @@ export default function ProductionCard({ prod, onDelete }: Props) {
                     실패
                   </span>
                 )}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => setCustomMode((v) => !v)}
+                  className="text-[10px] text-gray-500 hover:text-indigo-400 hover:underline"
+                >
+                  {customMode ? "배수 모드로 전환" : "커스텀 치수 수정"}
+                </button>
               </div>
               {prod.upscaleStatus === "error" && prod.upscaleError && (
                 <div
@@ -310,10 +364,10 @@ export default function ProductionCard({ prod, onDelete }: Props) {
                   )}
                   <a
                     href={prod.upscaleUrl}
-                    download={`${prod.name}-${prod.upscaleTargetW ?? targetW}x${prod.upscaleTargetH ?? targetH}.png`}
+                    download={`${prod.name}-${prod.upscaleTargetW ?? effectiveW}x${prod.upscaleTargetH ?? effectiveH}.png`}
                     className="text-[10px] text-indigo-400 hover:underline"
                   >
-                    {prod.upscaleTargetW ?? targetW} × {prod.upscaleTargetH ?? targetH} px 다운로드
+                    {prod.upscaleTargetW ?? effectiveW} × {prod.upscaleTargetH ?? effectiveH} px 다운로드
                   </a>
                 </div>
               )}
@@ -344,9 +398,9 @@ export default function ProductionCard({ prod, onDelete }: Props) {
         <CropModal
           open={cropOpen}
           imageUrl={prod.upscaleRawUrl}
-          targetW={prod.upscaleTargetW ?? (Number(targetW) || 1024)}
-          targetH={prod.upscaleTargetH ?? (Number(targetH) || 1024)}
-          title={`${prod.name} 크롭 — ${prod.upscaleTargetW ?? targetW} × ${prod.upscaleTargetH ?? targetH} px`}
+          targetW={prod.upscaleTargetW ?? (effectiveW || 1024)}
+          targetH={prod.upscaleTargetH ?? (effectiveH || 1024)}
+          title={`${prod.name} 크롭 — ${prod.upscaleTargetW ?? effectiveW} × ${prod.upscaleTargetH ?? effectiveH} px`}
           onApply={handleCropApply}
           onClose={() => setCropOpen(false)}
         />
