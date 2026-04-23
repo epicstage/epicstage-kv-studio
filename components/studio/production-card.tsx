@@ -66,6 +66,7 @@ export default function ProductionCard({ prod, onDelete }: Props) {
         ci,
         masterKvUrl,
         refAnalysis || undefined,
+        { provider: activeVersion.provider ?? "gemini" },
       );
       updateProduction(prod.id, { status: "done", imageUrl });
     } catch (err) {
@@ -80,7 +81,9 @@ export default function ProductionCard({ prod, onDelete }: Props) {
     if (!prod.imageUrl) return;
     updateProduction(prod.id, { noTextStatus: "generating", noTextError: undefined });
     try {
-      const noTextUrl = await generateNoTextVersion(prod.imageUrl);
+      const noTextUrl = await generateNoTextVersion(prod.imageUrl, {
+        provider: activeVersion?.provider ?? "gemini",
+      });
       updateProduction(prod.id, { noTextStatus: "done", noTextUrl });
     } catch (err) {
       updateProduction(prod.id, {

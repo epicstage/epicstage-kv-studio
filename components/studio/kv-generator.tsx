@@ -25,6 +25,8 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
     setMasterKv, confirmMasterKv, markVariationsStale,
     addSvgCandidates, updateSvgCandidate, removeSvgCandidate,
     addLog,
+    masterKvResolution, setMasterKvResolution,
+    masterKvIncludeGuideImages, setMasterKvIncludeGuideImages,
   } = useStore();
 
   const activeVersion = versions.find((v) => v.id === selectedVersionId);
@@ -69,7 +71,11 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
           selectedKvDef.name,
           ci,
           refAnalysis || undefined,
-          activeVersion.guideImages,
+          masterKvIncludeGuideImages ? activeVersion.guideImages : undefined,
+          {
+            provider: activeVersion.provider ?? "gemini",
+            resolution: masterKvResolution,
+          },
         );
       } else {
         const result = await generateRecraftKV(
@@ -88,6 +94,7 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
         imageUrl,
         ratio: selectedRatio,
         confirmed: false,
+        includedGuideImages: masterKvIncludeGuideImages,
       };
       setMasterKv(activeVersion.id, kv);
       addLog(`마스터 KV 생성 완료 (${engineLabel})`, "ok");
@@ -135,6 +142,7 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
         selectedKvDef.name,
         refAnalysis || undefined,
         svgBatchCount,
+        { provider: activeVersion.provider ?? "gemini" },
       );
       const batchId = `b${Date.now().toString(36)}`;
       const now = Date.now();
@@ -243,7 +251,11 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
         <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">생성 엔진</h3>
         <div className="flex gap-2">
           {([
-            { id: "gemini" as KvEngine, label: "Gemini", desc: "Nano Banana 2" },
+            {
+              id: "gemini" as KvEngine,
+              label: activeVersion.provider === "openai" ? "GPT Image 2" : "Nano Banana 2",
+              desc: activeVersion.provider === "openai" ? "OpenAI" : "Google Gemini 3.1",
+            },
             { id: "recraft_vector" as KvEngine, label: "Recraft Vector", desc: "V4 SVG" },
           ]).map((e) => (
             <button
@@ -261,6 +273,44 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
           ))}
         </div>
       </div>
+
+      {/* 생성 옵션 — 해상도 + 가이드 이미지 참조 첨부 */}
+      {engine === "gemini" && (
+        <div className="rounded-xl border border-gray-800 bg-gray-900/30 p-4">
+          <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-gray-500">생성 옵션</h3>
+          <div className="flex flex-wrap items-center gap-5">
+            <label className="flex items-center gap-2 text-sm">
+              <span className="text-gray-400">해상도</span>
+              <select
+                value={masterKvResolution}
+                onChange={(e) =>
+                  setMasterKvResolution(e.target.value as typeof masterKvResolution)
+                }
+                className="rounded-lg border border-gray-700 bg-gray-900 px-2 py-1.5 text-xs text-gray-300"
+              >
+                <option value="512">512</option>
+                <option value="1K">1K</option>
+                <option value="2K">2K (기본)</option>
+                <option value="4K">4K</option>
+              </select>
+            </label>
+            <label className="flex cursor-pointer items-start gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={masterKvIncludeGuideImages}
+                onChange={(e) => setMasterKvIncludeGuideImages(e.target.checked)}
+                className="mt-0.5 h-4 w-4 accent-indigo-500"
+              />
+              <span>
+                <span className="text-gray-300">Step 2 가이드 이미지를 참조로 첨부</span>
+                <span className="ml-2 text-[11px] text-gray-600">
+                  (체크 해제 시 프롬프트/CI만 사용)
+                </span>
+              </span>
+            </label>
+          </div>
+        </div>
+      )}
 
       {/* KV 캔버스 */}
       <div className="overflow-hidden rounded-xl border border-gray-800 bg-gray-950">

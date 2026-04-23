@@ -181,7 +181,9 @@ export default function GuidelineViewer({ version }: { version: Version }) {
         // 생성 중 다른 버전으로 바뀌었으면 중단
         if (useStore.getState().activeVersionId !== version.id) break;
         try {
-          const url = await generateGuideImage(g, item, refAnalysis || undefined, ci);
+          const url = await generateGuideImage(g, item, refAnalysis || undefined, ci, {
+            provider: version.provider ?? "gemini",
+          });
           useStore.getState().setGuideImage(version.id, itemId, url);
         } catch {
           // 실패해도 다음 진행

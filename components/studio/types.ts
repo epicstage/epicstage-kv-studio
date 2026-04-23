@@ -69,6 +69,8 @@ export interface MasterKv {
   ratio: string;
   confirmed: boolean;
   uploadedByUser?: boolean;
+  /** Whether Step 2 guide images were attached as reference on generation. */
+  includedGuideImages?: boolean;
 }
 
 export interface SvgCandidate {
@@ -88,6 +90,8 @@ export interface VersionPreview {
   tone: string;
 }
 
+export type ImageProviderId = "gemini" | "openai";
+
 export interface Version {
   id: string;
   num: number;
@@ -97,6 +101,12 @@ export interface Version {
   guideImages: Record<string, string>;
   masterKv?: MasterKv;
   svgCandidates?: SvgCandidate[];
+  /**
+   * Image-generation provider for Step 2/3/4 of this version. Optional for
+   * backward compatibility — existing versions default to "gemini" when
+   * absent.
+   */
+  provider?: ImageProviderId;
 }
 
 export interface ProductionPlanItem {
@@ -157,4 +167,9 @@ export interface CatalogItem {
   name: string;
   ratio: string;
   category: string;
+  /**
+   * 본질 그룹명. 같은 group을 공유하는 항목들은 Step 4 UI에서 하나의 카드로
+   * 묶이고 variant 칩으로 세분화된다. 없으면 단독 카드.
+   */
+  group?: string;
 }

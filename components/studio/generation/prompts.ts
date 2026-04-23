@@ -41,6 +41,72 @@ export const PRODUCTION_SYSTEM =
 export const PRINT_SPEC_INSTRUCTION =
   "Production-ready print artwork for direct delivery to print vendor. Flat graphic design layout only. No 3D rendering, no environmental context, no mockup perspective, no scene background, no props. Output must be the actual artwork as it would appear on the final printed/produced item.";
 
+/**
+ * 5-section prompt template for GPT Image 2 (gpt-image-2).
+ * Follows the official OpenAI Cookbook prompting guide:
+ *   Scene → Subject → Details → Use case → EXACT TEXT → Constraints
+ * Plus a REFERENCE IMAGES block that labels each ref by index + role so the
+ * model knows which ref to use for what (palette, composition, logo, etc.).
+ *
+ * Gemini branch keeps its existing freeform prompt — this template is only
+ * injected when the provider is "openai".
+ */
+export interface OpenAiPromptInput {
+  /** Atmosphere, lighting, background direction. */
+  scene: string;
+  /** Core visual subject — what the KV is about. */
+  subject: string;
+  /** Design-system bullet summary (palette/typography/motifs). Multi-line OK. */
+  details: string;
+  /** Production type + aspect ratio + intended usage. */
+  useCase: string;
+  /** Exact strings to render as visible text, with typography hints. */
+  texts: Array<{ label: string; value: string; hint?: string }>;
+  /** Reference image roles in the same order as the `refs` array. */
+  refRoles?: string[];
+  /** Extra negatives beyond the baseline. */
+  extraConstraints?: string[];
+}
+
+const BASELINE_CONSTRAINTS = [
+  "no watermark",
+  "no extra text beyond EXACT TEXT list",
+  "no duplicate text, no misspellings",
+  "no stock-photo overlays or fake brand logos",
+  "no 3D mockup perspective — flat artwork only",
+];
+
+export function buildOpenAiPrompt(input: OpenAiPromptInput): string {
+  const sections: string[] = [];
+
+  if (input.refRoles && input.refRoles.length > 0) {
+    const roleLines = input.refRoles.map((role, i) => `- Image ${i + 1}: ${role}`).join("\n");
+    sections.push(`REFERENCE IMAGES (in attached order):\n${roleLines}`);
+  }
+
+  sections.push(`Scene: ${input.scene.trim()}`);
+  sections.push(`Subject: ${input.subject.trim()}`);
+  sections.push(`Details:\n${input.details.trim()}`);
+  sections.push(`Use case: ${input.useCase.trim()}`);
+
+  if (input.texts.length > 0) {
+    const textLines = input.texts
+      .map((t) => {
+        const hint = t.hint ? ` (${t.hint})` : "";
+        return `- ${t.label}: "${t.value}"${hint}`;
+      })
+      .join("\n");
+    sections.push(`EXACT TEXT — render ONLY these strings as visible text:\n${textLines}`);
+  } else {
+    sections.push(`EXACT TEXT: (none — visual only, no readable text in the image)`);
+  }
+
+  const constraints = [...BASELINE_CONSTRAINTS, ...(input.extraConstraints ?? [])];
+  sections.push(`Constraints:\n${constraints.map((c) => `- ${c}`).join("\n")}`);
+
+  return sections.join("\n\n");
+}
+
 export const PLAN_SYSTEM = `너는 행사 그래픽 디자인 전문가야.
 사용자가 제공하는 행사 개요, 디자인 가이드라인, 제작 목록을 바탕으로 각 제작물의 상세 생성 계획을 만든다.
 반드시 아래 JSON 스키마로만 출력하고, 다른 텍스트는 절대 포함하지 마라.

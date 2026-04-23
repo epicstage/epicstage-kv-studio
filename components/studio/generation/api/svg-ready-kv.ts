@@ -1,10 +1,15 @@
 import { IMAGE_URL, isLocal } from "../../config";
-import type { Guideline } from "../../types";
+import type { Guideline, ImageProviderId } from "../../types";
 import { extractDesignSystemForProduction } from "../design-system";
 import { extractFirstImage, type GeminiResponse } from "../gemini-utils";
 import { PRINT_SPEC_INSTRUCTION, PRODUCTION_SYSTEM } from "../prompts";
+import { getProvider } from "../providers";
 
 const DEFAULT_BATCH_SIZE = 2;
+
+export interface SvgReadyKvOptions {
+  provider?: ImageProviderId;
+}
 
 /**
  * Build the prompt for an SVG-ready KV candidate. The output is intended to be
@@ -68,8 +73,23 @@ export async function generateSvgReadyKV(
   ratio: string,
   kvName: string,
   refAnalysis?: string,
+  options?: SvgReadyKvOptions,
 ): Promise<string> {
   const { system, user: userContent } = buildSvgReadyKvPrompt(guideline, ratio, kvName, refAnalysis);
+
+  const provider = options?.provider ?? "gemini";
+
+  if (provider === "openai") {
+    const openai = getProvider("openai");
+    if (!openai) throw new Error("OpenAI provider not available");
+    return openai.generate({
+      prompt: userContent,
+      system,
+      ratio,
+      size: "2K",
+      refs: [],
+    });
+  }
 
   const url = IMAGE_URL();
 
@@ -121,10 +141,11 @@ export async function generateSvgReadyKvBatch(
   kvName: string,
   refAnalysis?: string,
   count: number = DEFAULT_BATCH_SIZE,
+  options?: SvgReadyKvOptions,
 ): Promise<string[]> {
   const results = await Promise.allSettled(
     Array.from({ length: count }, () =>
-      generateSvgReadyKV(guideline, ratio, kvName, refAnalysis),
+      generateSvgReadyKV(guideline, ratio, kvName, refAnalysis, options),
     ),
   );
   const urls: string[] = [];

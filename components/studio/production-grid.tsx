@@ -199,6 +199,7 @@ export default function ProductionGrid() {
               ci,
               masterKvUrl,
               refAnalysis || undefined,
+              { provider: activeVersion.provider ?? "gemini" },
             );
             up(prod.id, { status: "done", imageUrl });
             addLog(`${prod.name} 완료`, "ok");

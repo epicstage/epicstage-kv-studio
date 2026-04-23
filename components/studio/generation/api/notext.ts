@@ -1,20 +1,43 @@
 import { IMAGE_URL, isLocal } from "../../config";
+import type { ImageProviderId } from "../../types";
 import {
   extractFirstImage,
   splitDataUrl,
   type GeminiResponse,
 } from "../gemini-utils";
 import { NO_TEXT_PROMPT, NO_TEXT_SYSTEM } from "../prompts";
+import { getProvider } from "../providers";
+
+export interface NoTextOptions {
+  provider?: ImageProviderId;
+}
 
 /**
  * Single-turn text removal (multi-turn `thoughtSignature` approach was
  * unstable for gemini-3.1-flash-image-preview — see docs/kv-first-redesign §8).
  * Accepts a `data:` URL and returns the text-free version as `data:` URL.
  */
-export async function generateNoTextVersion(originalImageUrl: string): Promise<string> {
+export async function generateNoTextVersion(
+  originalImageUrl: string,
+  options?: NoTextOptions,
+): Promise<string> {
   const split = splitDataUrl(originalImageUrl);
   if (!split) throw new Error("Invalid image data URL");
   const { mime: imgMime, base64: imgData } = split;
+
+  const provider = options?.provider ?? "gemini";
+
+  if (provider === "openai") {
+    const openai = getProvider("openai");
+    if (!openai) throw new Error("OpenAI provider not available");
+    return openai.generate({
+      prompt: NO_TEXT_PROMPT,
+      system: NO_TEXT_SYSTEM,
+      ratio: "1:1",
+      size: "2K",
+      refs: [{ mime: imgMime, base64: imgData }],
+    });
+  }
 
   const url = IMAGE_URL();
 

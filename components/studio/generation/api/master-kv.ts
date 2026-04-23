@@ -1,5 +1,5 @@
 import { IMAGE_URL, isLocal } from "../../config";
-import type { Guideline, ImageData } from "../../types";
+import type { Guideline, ImageData, ImageProviderId } from "../../types";
 import { extractDesignSystemForProduction } from "../design-system";
 import {
   extractFirstImage,
@@ -8,9 +8,19 @@ import {
   type GeminiResponse,
   type InlineDataPart,
 } from "../gemini-utils";
-import { PRINT_SPEC_INSTRUCTION, PRODUCTION_SYSTEM } from "../prompts";
+import {
+  PRINT_SPEC_INSTRUCTION,
+  PRODUCTION_SYSTEM,
+  buildOpenAiPrompt,
+} from "../prompts";
+import { getProvider, type ImageSize } from "../providers";
 
 const MAX_GUIDE_IMAGES = 4;
+
+export interface MasterKvOptions {
+  provider?: ImageProviderId;
+  resolution?: ImageSize;
+}
 
 function guideImagesToParts(guideImages?: Record<string, string>): InlineDataPart[] {
   if (!guideImages) return [];
@@ -70,9 +80,34 @@ REQUIREMENTS:
   return { system: PRODUCTION_SYSTEM, user };
 }
 
+function guideImagesToImageData(guideImages?: Record<string, string>): ImageData[] {
+  if (!guideImages) return [];
+  const out: ImageData[] = [];
+  for (const url of Object.values(guideImages)) {
+    if (!url) continue;
+    const split = splitDataUrl(url);
+    if (!split) continue;
+    out.push({ mime: split.mime, base64: split.base64 });
+    if (out.length >= MAX_GUIDE_IMAGES) break;
+  }
+  return out;
+}
+
+const IMAGE_SIZE_TO_GEMINI: Record<ImageSize, string> = {
+  "512": "512",
+  "1K": "1K",
+  "2K": "2K",
+  "4K": "4K",
+};
+
 /**
  * Generate the master KV — the hero image all 54 production variants derive
  * from. Returns a `data:` URL.
+ *
+ * `options.provider` chooses between the existing Gemini pipeline (Nano
+ * Banana 2) and the OpenAI adapter (GPT Image 2). The prompt body is
+ * identical across both so the same `buildMasterKvPrompt` output feeds
+ * either backend.
  */
 export async function generateMasterKV(
   guideline: Guideline,
@@ -81,8 +116,55 @@ export async function generateMasterKV(
   ciImages?: ImageData[],
   refAnalysis?: string,
   guideImages?: Record<string, string>,
+  options?: MasterKvOptions,
 ): Promise<string> {
   const { system, user: userContent } = buildMasterKvPrompt(guideline, ratio, kvName, refAnalysis);
+  const provider = options?.provider ?? "gemini";
+  const resolution: ImageSize = options?.resolution ?? "2K";
+
+  if (provider === "openai") {
+    const openai = getProvider("openai");
+    if (!openai) throw new Error("OpenAI provider not available");
+    const guideRefs = guideImagesToImageData(guideImages);
+    const ciRefs = (ciImages ?? []).slice(0, 3);
+    const refs: ImageData[] = [...guideRefs, ...ciRefs];
+    const refRoles = [
+      ...guideRefs.map(
+        () => "Guide sheet — palette, graphic motifs, compositional language",
+      ),
+      ...ciRefs.map(() => "Brand CI — logo and primary colors only"),
+    ];
+    const designSystem = extractDesignSystemForProduction(guideline, "kv");
+    const texts: Array<{ label: string; value: string; hint?: string }> = [];
+    if (guideline.event_summary?.name)
+      texts.push({ label: "HEADLINE", value: guideline.event_summary.name });
+    if (guideline.event_summary?.date)
+      texts.push({ label: "DATE", value: guideline.event_summary.date });
+    if (guideline.event_summary?.slogan)
+      texts.push({ label: "SLOGAN", value: guideline.event_summary.slogan });
+    const prompt = buildOpenAiPrompt({
+      scene:
+        "Professional event key visual with bold, memorable atmosphere. Full graphic-motif expression drawn from the attached guide sheets.",
+      subject: `Master Key Visual (${kvName}) — hero image all production variants derive from.`,
+      details: [
+        designSystem,
+        refAnalysis ? `Reference direction: ${refAnalysis}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n\n"),
+      useCase: `Master Key Visual, aspect ratio ${ratio}. Highest visual impact — flat graphic artwork, print/digital ready.`,
+      texts,
+      refRoles,
+      extraConstraints: [PRINT_SPEC_INSTRUCTION],
+    });
+    return openai.generate({
+      prompt,
+      system,
+      ratio,
+      size: resolution,
+      refs,
+    });
+  }
 
   const url = IMAGE_URL();
 
@@ -117,7 +199,7 @@ export async function generateMasterKV(
       generationConfig: {
         responseModalities: ["TEXT", "IMAGE"],
         temperature: 1,
-        imageConfig: { imageSize: "2K" },
+        imageConfig: { imageSize: IMAGE_SIZE_TO_GEMINI[resolution] },
       },
     }),
   });

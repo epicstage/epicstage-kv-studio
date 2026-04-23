@@ -6,6 +6,7 @@ import type {
   CatalogItem,
   ColorEntry,
   DocData,
+  ImageProviderId,
   LogEntry,
   MasterKv,
   NamedImageData,
@@ -18,12 +19,15 @@ import type {
 export type {
   ColorEntry,
   Guideline,
+  ImageProviderId,
   MasterKv,
   Production,
   ProductionPlanItem,
   SvgCandidate,
   Version,
 } from "./types";
+
+type MasterKvResolution = "512" | "1K" | "2K" | "4K";
 
 interface StudioStore {
   step: 1 | 2 | 3 | 4;
@@ -90,6 +94,17 @@ interface StudioStore {
 
   isProcessing: boolean;
   setProcessing: (v: boolean) => void;
+
+  // Step 1: image-generation provider selected for the NEXT version to be
+  // created. Persisted on the version once "새 버전 생성" is clicked.
+  pendingProvider: ImageProviderId;
+  setPendingProvider: (p: ImageProviderId) => void;
+
+  // Step 3 controls — transient UI state, read at master-KV generation time.
+  masterKvResolution: MasterKvResolution;
+  setMasterKvResolution: (r: MasterKvResolution) => void;
+  masterKvIncludeGuideImages: boolean;
+  setMasterKvIncludeGuideImages: (v: boolean) => void;
 
   logs: LogEntry[];
   addLog: (msg: string, type?: string) => void;
@@ -252,6 +267,14 @@ export const useStore = create<StudioStore>((set) => ({
 
   isProcessing: false,
   setProcessing: (v) => set({ isProcessing: v }),
+
+  pendingProvider: "gemini",
+  setPendingProvider: (p) => set({ pendingProvider: p }),
+
+  masterKvResolution: "2K",
+  setMasterKvResolution: (r) => set({ masterKvResolution: r }),
+  masterKvIncludeGuideImages: true,
+  setMasterKvIncludeGuideImages: (v) => set({ masterKvIncludeGuideImages: v }),
 
   logs: [],
   addLog: (msg, type) =>

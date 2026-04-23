@@ -1,5 +1,5 @@
 import { IMAGE_URL, isLocal } from "../../config";
-import type { Guideline, ImageData } from "../../types";
+import type { Guideline, ImageData, ImageProviderId } from "../../types";
 import { extractDesignSystemForProduction } from "../design-system";
 import {
   extractFirstImage,
@@ -7,7 +7,12 @@ import {
   toInlineDataParts,
   type GeminiResponse,
 } from "../gemini-utils";
-import { PRINT_SPEC_INSTRUCTION, PRODUCTION_SYSTEM } from "../prompts";
+import {
+  PRINT_SPEC_INSTRUCTION,
+  PRODUCTION_SYSTEM,
+  buildOpenAiPrompt,
+} from "../prompts";
+import { getProvider, type ImageSize } from "../providers";
 
 export interface ProductionInput {
   name: string;
@@ -22,6 +27,10 @@ export interface ProductionInput {
   temperature?: number;
   seed?: number;
   overridden?: boolean;
+}
+
+export interface ProductionOptions {
+  provider?: ImageProviderId;
 }
 
 const GEMINI_SUPPORTED_RATIOS = new Set([
@@ -58,7 +67,11 @@ function buildGenerationConfig(prod: ProductionInput): Record<string, unknown> {
 
 /**
  * Generate a production variant image, optionally using the master KV as the
- * first visual reference so Gemini inherits palette/motifs/composition.
+ * first visual reference so the model inherits palette/motifs/composition.
+ *
+ * `options.provider` routes the call to either the existing Gemini pipeline
+ * (Nano Banana 2) or the OpenAI adapter (GPT Image 2). Both paths receive
+ * the identical prompt body — only the transport and payload differ.
  */
 export async function generateProductionImage(
   guideline: Guideline,
@@ -66,6 +79,7 @@ export async function generateProductionImage(
   ciImages?: ImageData[],
   masterKvUrl?: string,
   refAnalysis?: string,
+  options?: ProductionOptions,
 ): Promise<string> {
   const designSystem = extractDesignSystemForProduction(guideline, prod.name);
 
@@ -105,6 +119,58 @@ REQUIREMENTS:
 - Professional print/digital quality
 - No placeholder text
 - Match the design system and master KV precisely`;
+
+  const provider = options?.provider ?? "gemini";
+
+  if (provider === "openai") {
+    const openai = getProvider("openai");
+    if (!openai) throw new Error("OpenAI provider not available");
+    const refs: ImageData[] = [];
+    const refRoles: string[] = [];
+    if (masterKvUrl) {
+      const split = splitDataUrl(masterKvUrl);
+      if (split) {
+        refs.push({ mime: split.mime, base64: split.base64 });
+        refRoles.push(
+          "Master KV — preserve palette, graphic motifs, typography mood; recompose for this aspect ratio",
+        );
+      }
+    }
+    const ciSlice = (ciImages ?? []).slice(0, 2);
+    refs.push(...ciSlice);
+    ciSlice.forEach(() =>
+      refRoles.push("Brand CI — logo and primary colors only"),
+    );
+    const texts: Array<{ label: string; value: string; hint?: string }> = [];
+    if (prod.headline) texts.push({ label: "HEADLINE", value: prod.headline });
+    if (prod.subtext) texts.push({ label: "SUBTEXT", value: prod.subtext });
+    const detailBlocks = [
+      designSystem,
+      prod.imagePrompt ? `Visual direction: ${prod.imagePrompt}` : "",
+      prod.layoutNote ? `Layout: ${prod.layoutNote}` : "",
+      refAnalysis ? `Reference direction: ${refAnalysis}` : "",
+    ].filter(Boolean);
+    const extraConstraints = [PRINT_SPEC_INSTRUCTION];
+    if (prod.renderInstruction) extraConstraints.push(prod.renderInstruction);
+    const prompt = buildOpenAiPrompt({
+      scene: masterKvUrl
+        ? "Professional event graphic derived from the attached master KV — inherit its atmosphere, palette, and motif language."
+        : "Professional event graphic with coherent atmosphere drawn from the design system.",
+      subject: `${prod.name} — production-ready flat graphic artwork.`,
+      details: detailBlocks.join("\n\n"),
+      useCase: `${prod.name}, aspect ratio ${prod.ratio}. Production-ready print/digital output.`,
+      texts,
+      refRoles,
+      extraConstraints,
+    });
+    return openai.generate({
+      prompt,
+      system: PRODUCTION_SYSTEM,
+      ratio: prod.ratio,
+      size: (prod.imageSize as ImageSize) ?? "2K",
+      refs,
+    });
+  }
 
   const url = IMAGE_URL();
   const generationConfig = buildGenerationConfig(prod);

@@ -38,6 +38,7 @@ export default function GuideImageCard({ version, sectionKey, autoGenerating }: 
         item,
         refAnalysis || undefined,
         ci,
+        { provider: version.provider ?? "gemini" },
       );
       setGuideImage(version.id, itemId, url);
     } catch (e) {

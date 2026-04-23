@@ -2,6 +2,7 @@ export interface Env {
   EPIC_DB: D1Database;
   EPIC_KV: KVNamespace;
   GEMINI_API_KEY: string;
+  OPENAI_API_KEY: string;
   NAVER_CLIENT_ID: string;
   NAVER_CLIENT_SECRET: string;
   EPIC_SEARCH_URL: string;
@@ -10,6 +11,9 @@ export interface Env {
   RECRAFT_API_TOKEN: string;
   TOPAZ_API_KEY: string;
 }
+
+// OpenAI Images API base. Global endpoint — no regional proxy needed.
+export const OPENAI_BASE = "https://api.openai.com/v1";
 
 // Routed through a Supabase Edge Function pinned to Seoul (ap-northeast-2)
 // so the outbound fetch to Google originates from a Korean IP. The CF

@@ -23,6 +23,7 @@ export default function StudioApp() {
     versions, activeVersionId, selectedVersionId,
     addVersion, setActiveVersion, selectVersionForStep3,
     isProcessing, setProcessing, addLog,
+    pendingProvider, setPendingProvider,
   } = useStore();
 
   const [generateError, setGenerateError] = useState("");
@@ -61,9 +62,10 @@ export default function StudioApp() {
       const { ciDocs } = useStore.getState();
       const docs = ciDocs.map((d) => ({ mime: d.mime, base64: d.base64, name: d.name }));
       const guideline = await generateGuideline(eventInfo, styleOverride, existingTones, analysis || undefined, ci, docs);
-      const version = createVersion(versions.length + 1, guideline);
+      const version = createVersion(versions.length + 1, guideline, pendingProvider);
       addVersion(version);
-      addLog(`Ver.${version.num} 생성 완료 — "${guideline.event_summary.name}"`, "ok");
+      const providerLabel = pendingProvider === "openai" ? "GPT Image 2" : "Nano Banana 2";
+      addLog(`Ver.${version.num} 생성 완료 — "${guideline.event_summary.name}" (${providerLabel})`, "ok");
       setStep(2);
     } catch (err) {
       const msg = err instanceof Error ? err.message : "알 수 없는 오류";
@@ -147,6 +149,52 @@ export default function StudioApp() {
           <div className="grid gap-5 lg:grid-cols-2">
             <EventInput value={eventInfo} onChange={setEventInfo} />
             <ReferenceSearch selectedRefs={selectedRefs} onSelectRef={toggleRef} />
+          </div>
+
+          {/* Image-generation model selector */}
+          <div className="rounded-xl border border-gray-800/60 bg-gray-900/30 p-4">
+            <div className="mb-3 flex items-center gap-2">
+              <h3 className="font-nacelle text-sm font-semibold text-white">이미지 생성 모델</h3>
+              <span className="text-[10px] text-gray-600">
+                Step 2 가이드 이미지, Step 3 마스터 KV, Step 4 바리에이션에 적용
+              </span>
+            </div>
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {([
+                {
+                  id: "gemini" as const,
+                  title: "Nano Banana 2",
+                  sub: "Google Gemini 3.1 Flash Image",
+                },
+                {
+                  id: "openai" as const,
+                  title: "GPT Image 2",
+                  sub: "OpenAI · 2K · 텍스트 렌더 강화",
+                },
+              ]).map((opt) => (
+                <label
+                  key={opt.id}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border px-4 py-3 transition-all ${
+                    pendingProvider === opt.id
+                      ? "border-indigo-500/60 bg-indigo-500/10"
+                      : "border-gray-800 hover:border-gray-700"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="provider"
+                    value={opt.id}
+                    checked={pendingProvider === opt.id}
+                    onChange={() => setPendingProvider(opt.id)}
+                    className="mt-1 h-4 w-4 accent-indigo-500"
+                  />
+                  <div className="flex-1">
+                    <div className="text-sm font-medium text-white">{opt.title}</div>
+                    <div className="text-[11px] text-gray-500">{opt.sub}</div>
+                  </div>
+                </label>
+              ))}
+            </div>
           </div>
 
           {/* Generate button — full width, bottom */}

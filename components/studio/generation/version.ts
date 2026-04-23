@@ -1,10 +1,16 @@
-import type { ColorEntry, Guideline, Version } from "../types";
+import type { ColorEntry, Guideline, ImageProviderId, Version } from "../types";
 
 /**
  * Create a new Version wrapper around a freshly generated guideline. Derives
  * a small preview (first 4 palette colors + mood keywords) for the list UI.
+ * The provider selected at Step 1 is stamped on the version so Step 2/3/4
+ * image generation calls stay consistent within a single version.
  */
-export function createVersion(num: number, guideline: Guideline): Version {
+export function createVersion(
+  num: number,
+  guideline: Guideline,
+  provider: ImageProviderId = "gemini",
+): Version {
   return {
     id: "ver_" + Date.now() + "_" + Math.random().toString(36).slice(2, 6),
     num,
@@ -19,5 +25,6 @@ export function createVersion(num: number, guideline: Guideline): Version {
       tone: guideline.mood?.tone || "",
     },
     guideImages: {},
+    provider,
   };
 }

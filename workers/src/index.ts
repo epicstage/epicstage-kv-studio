@@ -4,6 +4,7 @@ import { HTTPException } from "hono/http-exception";
 import { CORS_ORIGINS, type Env } from "./env";
 import { generateRoutes } from "./routes/generate";
 import { imageRoutes } from "./routes/images";
+import { openaiImageRoutes } from "./routes/openai-images";
 import { projectRoutes } from "./routes/projects";
 import { searchRoutes } from "./routes/search";
 import { upscaleRoutes } from "./routes/upscale";
@@ -23,6 +24,7 @@ app.use(
 app.get("/", (c) => c.json({ status: "ok", service: "epic-studio-api" }));
 
 app.route("/", generateRoutes);
+app.route("/", openaiImageRoutes);
 app.route("/", projectRoutes);
 app.route("/", searchRoutes);
 app.route("/", imageRoutes);

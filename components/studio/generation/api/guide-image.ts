@@ -1,8 +1,13 @@
 import { IMAGE_URL, isLocal } from "../../config";
-import type { GuideItem, Guideline, ImageData } from "../../types";
+import type { GuideItem, Guideline, ImageData, ImageProviderId } from "../../types";
 import { extractGuideFieldsForItem } from "../design-system";
 import { extractFirstImage, toInlineDataParts, type GeminiResponse } from "../gemini-utils";
 import { GUIDE_IMAGE_SYSTEM } from "../prompts";
+import { getProvider } from "../providers";
+
+export interface GuideImageOptions {
+  provider?: ImageProviderId;
+}
 
 /**
  * Generate a single guideline reference image (palette sheet, mood board,
@@ -13,6 +18,7 @@ export async function generateGuideImage(
   item: GuideItem,
   refAnalysis?: string,
   ciImages?: ImageData[],
+  options?: GuideImageOptions,
 ): Promise<string> {
   const relevantFields = extractGuideFieldsForItem(guideline, item.id);
 
@@ -28,6 +34,20 @@ INSTRUCTION:
 - Clean white background, professional design guide style.
 - Aspect ratio: 4:3 horizontal
 - Always output as an IMAGE.`;
+
+  const provider = options?.provider ?? "gemini";
+
+  if (provider === "openai") {
+    const openai = getProvider("openai");
+    if (!openai) throw new Error("OpenAI provider not available");
+    return openai.generate({
+      prompt: userContent,
+      system: GUIDE_IMAGE_SYSTEM,
+      ratio: "4:3",
+      size: "2K",
+      refs: (ciImages ?? []).slice(0, 3),
+    });
+  }
 
   const url = IMAGE_URL();
 
