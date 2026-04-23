@@ -1,16 +1,19 @@
 // 레퍼런스 이미지들을 Gemini로 분석 → 스타일/무드/색상 JSON 반환
+// 선택적 `system` 필드를 받아 CI 전용 브리프 등 다른 분석 프롬프트로도 재사용 가능.
 
 const WORKER_BASE = "https://epic-studio-api.kbm-32f.workers.dev";
 
-const SYSTEM = `너는 비주얼 디자인 분석 전문가야.
+const DEFAULT_SYSTEM = `너는 비주얼 디자인 분석 전문가야.
 첨부된 레퍼런스 이미지들의 공통 디자인 경향성을 JSON으로 추출한다.
 분석 항목: color_tendency, typography_tendency, layout_tendency, graphic_tendency, mood_tendency(키워드 3-5개), consistency_notes.
 JSON만 출력.`;
 
 export async function POST(req: Request) {
-  const { images } = await req.json() as {
+  const { images, system } = await req.json() as {
     images: Array<{ mime: string; base64: string }>;
+    system?: string;
   };
+  const SYSTEM = system?.trim() ? system : DEFAULT_SYSTEM;
 
   if (!images?.length) {
     return Response.json({ error: "images required" }, { status: 400 });

@@ -28,6 +28,7 @@ interface AutosaveSnapshot {
   refFiles: StoreState["refFiles"];
   selectedRefs: string[];
   refAnalysis: string;
+  ciBrief: string;
 }
 
 function snapshot(): AutosaveSnapshot {
@@ -50,6 +51,7 @@ function snapshot(): AutosaveSnapshot {
     refFiles: s.refFiles,
     selectedRefs: s.selectedRefs,
     refAnalysis: s.refAnalysis,
+    ciBrief: s.ciBrief,
   };
 }
 
@@ -136,6 +138,7 @@ export function useRestorableAutosave(): {
       s.setEventInfo(saved.eventInfo);
       s.setStyleOverride(saved.styleOverride ?? "");
       s.setRefAnalysis(saved.refAnalysis ?? "");
+      s.setCiBrief(saved.ciBrief ?? "");
       saved.versions.forEach((v) => s.addVersion(v));
       if (saved.activeVersionId) s.setActiveVersion(saved.activeVersionId);
       if (saved.selectedVersionId) s.selectVersionForStep3(saved.selectedVersionId);

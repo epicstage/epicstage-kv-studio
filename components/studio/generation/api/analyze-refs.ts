@@ -2,7 +2,7 @@ import { API_BASE } from "../../api";
 import { ANALYZE_REFS_URL, isLocal } from "../../config";
 import type { ImageData } from "../../types";
 import { extractText, toInlineDataParts, type GeminiResponse } from "../gemini-utils";
-import { ANALYZE_REFS_SYSTEM } from "../prompts";
+import { ANALYZE_CI_SYSTEM, ANALYZE_REFS_SYSTEM } from "../prompts";
 
 /**
  * Analyze a small set of reference images and return a JSON string describing
@@ -40,6 +40,64 @@ export async function analyzeRefs(images: ImageData[]): Promise<string> {
     }),
   });
   if (!resp.ok) throw new Error(`분석 실패: ${resp.status}`);
+  const data = (await resp.json()) as GeminiResponse;
+  const text = extractText(data);
+
+  const start = text.indexOf("{");
+  const end = text.lastIndexOf("}");
+  if (start !== -1 && end !== -1) {
+    try {
+      return JSON.stringify(JSON.parse(text.substring(start, end + 1)), null, 2);
+    } catch {
+      // fall through to raw text
+    }
+  }
+  return text;
+}
+
+/**
+ * Analyze CI / brand assets and return a JSON-string *brief* that captures
+ * palette, tone, graphic character, and typography feel WITHOUT describing
+ * the logo's shape. The brief is the text substitute for the CI image when
+ * calling OpenAI GPT Image 2 — attaching the raw logo to `/images/edits`
+ * reproduces it in the output, so we strip pixels and keep only textual
+ * style signals.
+ *
+ * Returns `""` when no images are supplied.
+ */
+export async function analyzeCi(images: ImageData[]): Promise<string> {
+  if (!images.length) return "";
+
+  if (isLocal()) {
+    const resp = await fetch(ANALYZE_REFS_URL(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ images, system: ANALYZE_CI_SYSTEM }),
+    });
+    if (!resp.ok) throw new Error(`CI 분석 실패: ${resp.status}`);
+    const data = (await resp.json()) as { analysis: unknown };
+    return typeof data.analysis === "object"
+      ? JSON.stringify(data.analysis, null, 2)
+      : String(data.analysis ?? "");
+  }
+
+  const parts = [
+    ...toInlineDataParts(images, 4),
+    {
+      text: `${ANALYZE_CI_SYSTEM}\n\n${images.length}장의 CI 자료를 분석해줘.`,
+    },
+  ];
+
+  const resp = await fetch(`${API_BASE}/api/generate`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      model: "gemini-3.1-flash-image-preview",
+      contents: [{ role: "user", parts }],
+      generationConfig: { temperature: 0.3 },
+    }),
+  });
+  if (!resp.ok) throw new Error(`CI 분석 실패: ${resp.status}`);
   const data = (await resp.json()) as GeminiResponse;
   const text = extractText(data);
 

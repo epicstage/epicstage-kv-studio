@@ -5,7 +5,7 @@ import AutosaveBanner from "./autosave-banner";
 import CatalogSelector from "./catalog-selector";
 import ChatPanel from "./chat-panel";
 import EventInput from "./event-input";
-import { analyzeRefs, createVersion, generateGuideline } from "./generation";
+import { analyzeCi, analyzeRefs, createVersion, generateGuideline } from "./generation";
 import GuidelineViewer from "./guideline-viewer";
 import KvGenerator from "./kv-generator";
 import ProductionGrid from "./production-grid";
@@ -41,7 +41,14 @@ export default function StudioApp() {
 
     try {
       // 레퍼런스 분석 (업로드 이미지 있고 아직 분석 안 됐으면 자동 실행)
-      const { ciImages, refFiles, refAnalysis: currentAnalysis, setRefAnalysis } = useStore.getState();
+      const {
+        ciImages,
+        refFiles,
+        refAnalysis: currentAnalysis,
+        setRefAnalysis,
+        ciBrief: currentCiBrief,
+        setCiBrief,
+      } = useStore.getState();
       let analysis = currentAnalysis;
       if (refFiles.length > 0 && !analysis) {
         addLog("레퍼런스 이미지 분석 중...");
@@ -57,8 +64,25 @@ export default function StudioApp() {
         }
       }
 
-      const existingTones = versions.map((v) => v.guideline?.mood?.tone).filter(Boolean);
       const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
+
+      // CI 분석 — OpenAI 분기에서 로고 픽셀 대신 텍스트 브리프로 주입하려고 미리 뽑음.
+      // ciImages가 바뀌면 store가 ciBrief를 ""로 invalidate하므로 여기서만 재실행된다.
+      if (ci.length > 0 && !currentCiBrief) {
+        addLog("CI 자료 분석 중...");
+        try {
+          const brief = await analyzeCi(ci);
+          setCiBrief(brief);
+          addLog("CI 분석 완료", "ok");
+        } catch (e) {
+          addLog(
+            `CI 분석 실패: ${e instanceof Error ? e.message : String(e)}`,
+            "err",
+          );
+        }
+      }
+
+      const existingTones = versions.map((v) => v.guideline?.mood?.tone).filter(Boolean);
       const { ciDocs } = useStore.getState();
       const docs = ciDocs.map((d) => ({ mime: d.mime, base64: d.base64, name: d.name }));
       const guideline = await generateGuideline(eventInfo, styleOverride, existingTones, analysis || undefined, ci, docs);

@@ -183,14 +183,6 @@ export function generateGuidelinePdf(
     gm.elements?.length ? `<div style="margin-top:4px">${gm.elements.map((el: string) => `<span style="display:inline-block;padding:1px 8px;border-radius:4px;background:#f0f0f0;font-size:11px;margin:2px">${el}</span>`).join("")}</div>` : "",
   ].filter(Boolean).join("") : "";
 
-  // ─── 레이아웃 가이드 (UI와 동일한 key-value 형태) ───
-  const layoutHtml = guideline.layout_guide
-    ? Object.entries(guideline.layout_guide)
-        .filter(([, v]) => v)
-        .map(([k, v]) => `<div style="display:flex;gap:8px;margin:2px 0"><span style="font-family:monospace;font-size:10px;color:#999;text-transform:uppercase;flex-shrink:0">${k}</span><span>${v}</span></div>`)
-        .join("")
-    : "";
-
   // 가이드 이미지 섹션 HTML
   function guideImg(sectionId: string): string {
     const url = guideImages?.[sectionId];
@@ -218,8 +210,6 @@ ${guideline.event_summary?.slogan ? `<p style="font-style:italic;color:#555">"${
 <h2>무드</h2><div>${mood}</div>${guideline.mood?.tone ? `<div style="margin-top:8px;color:#666;font-size:13px">톤: ${guideline.mood.tone}</div>` : ""}${guideImg("mood_board")}
 
 <h2>그래픽 모티프</h2><div class="section-text">${motifHtml}</div>${guideImg("motif_board")}
-
-${guideline.layout_guide ? `<h2>레이아웃 가이드</h2><div class="section-text">${layoutHtml}</div>${guideImg("layout_sketches")}` : ""}
 
 </body></html>`;
 

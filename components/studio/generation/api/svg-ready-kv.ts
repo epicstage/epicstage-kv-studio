@@ -24,7 +24,7 @@ export function buildSvgReadyKvPrompt(
   kvName: string,
   refAnalysis?: string,
 ): { system: string; user: string } {
-  const designSystem = extractDesignSystemForProduction(guideline, "kv");
+  const designSystem = extractDesignSystemForProduction(guideline);
 
   const user = `Professional event key visual — FLAT VECTOR, SVG-ready.
 Aspect ratio: ${ratio}. Type: ${kvName}.

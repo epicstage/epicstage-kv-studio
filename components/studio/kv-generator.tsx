@@ -22,7 +22,7 @@ const RATIO_LABELS = {
 export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
   const {
     versions, selectedVersionId,
-    ciImages, refAnalysis, refFiles,
+    ciImages, ciBrief, refAnalysis, refFiles,
     setMasterKv, confirmMasterKv, markVariationsStale,
     addSvgCandidates, updateSvgCandidate, removeSvgCandidate,
     addLog,
@@ -82,6 +82,7 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
             provider: activeVersion.provider ?? "gemini",
             resolution: masterKvResolution,
             overridePrompt: override,
+            ciBrief: ciBrief || undefined,
           },
         );
       } else {
@@ -679,7 +680,9 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
       {/* 입력 미리보기 (프롬프트 + 레퍼런스 이미지) — provider별로 프롬프트 다름 */}
       {activeVersion && (() => {
         const provider = activeVersion.provider ?? "gemini";
-        const ciSent = ciImages.slice(0, 3);
+        // OpenAI 분기에서는 CI를 이미지로 첨부하지 않고 텍스트 브리프(ciBrief)로 주입한다.
+        // 프리뷰도 그 전송 실태와 정확히 일치해야 하므로 ciSent는 Gemini일 때만 채운다.
+        const ciSent = provider === "openai" ? [] : ciImages.slice(0, 3);
         const guideSent = Object.entries(activeVersion.guideImages ?? {})
           .filter(([, url]) => !!url)
           .slice(0, 4);
@@ -691,7 +694,7 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
                 selectedKvDef.name,
                 refAnalysis || undefined,
                 guideSent.length,
-                ciSent.length,
+                ciBrief || undefined,
               )
             : buildMasterKvPrompt(
                 activeVersion.guideline,
@@ -759,9 +762,23 @@ export default function KvGenerator({ onConfirm }: { onConfirm: () => void }) {
               </div>
               <div>
                 <h4 className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-indigo-400">
-                  CI 이미지 ({provider === "openai" ? "OpenAI로 첨부" : "Gemini로 inline 전송"} — {ciSent.length}/{ciImages.length}장)
+                  CI {provider === "openai"
+                    ? `(GPT Image 2 — 텍스트 브리프로 전달, 이미지 미첨부 · 원본 ${ciImages.length}장)`
+                    : `이미지 (Gemini로 inline 전송 — ${ciSent.length}/${ciImages.length}장)`}
                 </h4>
-                {ciSent.length > 0 ? (
+                {provider === "openai" ? (
+                  ciImages.length === 0 ? (
+                    <p className="text-[11px] text-gray-600">CI 자료 없음</p>
+                  ) : ciBrief ? (
+                    <pre className="max-h-48 overflow-auto rounded-lg border border-gray-800 bg-gray-950 p-3 font-mono text-[10px] leading-relaxed text-gray-400 whitespace-pre-wrap">
+                      {ciBrief}
+                    </pre>
+                  ) : (
+                    <p className="text-[11px] text-amber-400">
+                      CI 브리프 미생성 — 다음 생성 요청 시 자동 분석됩니다
+                    </p>
+                  )
+                ) : ciSent.length > 0 ? (
                   <div className="flex flex-wrap gap-2">
                     {ciSent.map((img, i) => (
                       <img

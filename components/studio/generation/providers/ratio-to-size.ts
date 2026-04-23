@@ -1,117 +1,146 @@
 import type { ImageSize } from "./types";
 
-// GPT Image 2 `size` constraints:
-//   - each edge multiple of 16
+// GPT Image 2 `size` constraints (OpenAI /v1/images/generations + /edits):
+//   - each edge must be a multiple of 16
 //   - max edge ≤ 3840
-//   - aspect ratio between 1:3 and 3:1
-//   - total pixels between 655,360 and 8,294,400
-// Pre-computed tables satisfy all constraints for the four quality buckets
-// our UI exposes. Unknown ratios fall back to 1:1 at the requested size.
+//   - aspect ratio between 1:3 and 3:1 (inclusive)
+//   - total pixels in [655,360, 8,294,400]
+//
+// This module resolves a logical `"W:H"` ratio + quality bucket to a concrete
+// `WxH` size string, computed from the requested aspect — not looked up in a
+// table. Aspects outside the API range are clamped to 3:1 / 1:3 and the caller
+// is told via `clamped: true` so it can surface the adjustment (never silent).
 
-const SIZE_1K: Record<string, string> = {
-  "1:1": "1024x1024",
-  "16:9": "1024x576",
-  "9:16": "576x1024",
-  "4:3": "1024x768",
-  "3:4": "768x1024",
-  "3:2": "1024x688",
-  "2:3": "688x1024",
-  "4:5": "848x1056",
-  "5:4": "1056x848",
-  "21:9": "1344x576",
-  "9:21": "576x1344",
-  "1:3": "576x1728",
-  "3:1": "1728x576",
-  "5:3": "960x576",
-  "3:5": "576x960",
-  "1:1.414": "720x1024",
-  "1.414:1": "1024x720",
-  "5:7": "720x1024",
-  "7:5": "1024x720",
+const API_MAX_EDGE = 3840;
+const API_MIN_PIXELS = 655_360;
+const API_MAX_PIXELS = 8_294_400;
+const API_MAX_ASPECT = 3; // 3:1 — symmetric minimum is 1/3
+const STEP = 16;
+
+const BUCKET_TARGET_PIXELS: Record<ImageSize, number> = {
+  // 512 bucket is below the API floor if taken literally — nudge to 1K so
+  // previews still satisfy the OpenAI minimum.
+  "512": 1024 * 1024,
+  "1K": 1024 * 1024,
+  "2K": 2048 * 2048,
+  "4K": API_MAX_PIXELS,
 };
 
-const SIZE_2K: Record<string, string> = {
-  "1:1": "2048x2048",
-  "16:9": "2048x1152",
-  "9:16": "1152x2048",
-  "4:3": "2048x1536",
-  "3:4": "1536x2048",
-  "3:2": "2048x1360",
-  "2:3": "1360x2048",
-  "4:5": "1632x2048",
-  "5:4": "2048x1632",
-  "21:9": "2688x1152",
-  "9:21": "1152x2688",
-  "1:3": "1152x3456",
-  "3:1": "3456x1152",
-  "5:3": "1920x1152",
-  "3:5": "1152x1920",
-  "1:1.414": "1456x2048",
-  "1.414:1": "2048x1456",
-  "5:7": "1456x2048",
-  "7:5": "2048x1456",
-};
-
-const SIZE_4K: Record<string, string> = {
-  "1:1": "3840x3840",
-  "16:9": "3840x2160",
-  "9:16": "2160x3840",
-  "4:3": "3840x2880",
-  "3:4": "2880x3840",
-  "3:2": "3840x2560",
-  "2:3": "2560x3840",
-  "4:5": "2880x3600",
-  "5:4": "3600x2880",
-  "21:9": "3840x1648",
-  "9:21": "1648x3840",
-  "1:3": "1280x3840",
-  "3:1": "3840x1280",
-  "5:3": "3600x2160",
-  "3:5": "2160x3600",
-  "1:1.414": "2384x3360",
-  "1.414:1": "3360x2384",
-  "5:7": "2400x3360",
-  "7:5": "3360x2400",
-};
-
-const SIZE_512: Record<string, string> = {
-  "1:1": "512x512",
-  "16:9": "768x432",
-  "9:16": "432x768",
-  "4:3": "640x480",
-  "3:4": "480x640",
-  "3:2": "672x448",
-  "2:3": "448x672",
-  "4:5": "512x640",
-  "5:4": "640x512",
-  "21:9": "896x384",
-  "9:21": "384x896",
-  "1:3": "384x1152",
-  "3:1": "1152x384",
-  "5:3": "640x384",
-  "3:5": "384x640",
-  "1:1.414": "448x640",
-  "1.414:1": "640x448",
-  "5:7": "448x640",
-  "7:5": "640x448",
-};
-
-const TABLES: Record<ImageSize, Record<string, string>> = {
-  "512": SIZE_512,
-  "1K": SIZE_1K,
-  "2K": SIZE_2K,
-  "4K": SIZE_4K,
-};
-
-/**
- * Resolve a logical ratio + resolution bucket to the exact `size` string
- * GPT Image 2 expects. Falls back to the matching square when the ratio is
- * unknown. Returns "auto" when the bucket itself is missing.
- */
-export function ratioToSize(ratio: string, bucket: ImageSize = "2K"): string {
-  const table = TABLES[bucket];
-  if (!table) return "auto";
-  return table[ratio] ?? table["1:1"];
+function roundStep(n: number): number {
+  return Math.max(STEP, Math.round(n / STEP) * STEP);
 }
 
-export const OPENAI_SUPPORTED_RATIOS = Object.keys(SIZE_2K);
+function gcd(a: number, b: number): number {
+  return b === 0 ? a : gcd(b, a % b);
+}
+
+export interface ResolvedRatio {
+  /** `WxH` string accepted by OpenAI's `size` field. */
+  size: string;
+  /** Reduced `W:H` matching the actual pixel dimensions (may differ from the request if clamped). */
+  effectiveRatio: string;
+  /** True when the requested aspect was outside [1:3, 3:1] and we clamped. */
+  clamped: boolean;
+}
+
+/**
+ * Resolve a `"W:H"` ratio + quality bucket to the concrete pixel size GPT
+ * Image 2 expects. No table, no silent fallback — the size is computed to
+ * match the requested aspect as closely as API constraints allow.
+ *
+ * Throws on malformed ratios so callers fail loudly instead of falling back
+ * to an arbitrary default.
+ */
+export function resolveRatio(ratio: string, bucket: ImageSize = "2K"): ResolvedRatio {
+  const parts = ratio.split(":");
+  if (parts.length !== 2) throw new Error(`Invalid ratio "${ratio}" — expected "W:H"`);
+  const w = Number(parts[0]);
+  const h = Number(parts[1]);
+  if (!Number.isFinite(w) || !Number.isFinite(h) || w <= 0 || h <= 0) {
+    throw new Error(`Invalid ratio "${ratio}" — W and H must be positive numbers`);
+  }
+
+  let aspect = w / h;
+  let clamped = false;
+  if (aspect > API_MAX_ASPECT) {
+    aspect = API_MAX_ASPECT;
+    clamped = true;
+  } else if (aspect < 1 / API_MAX_ASPECT) {
+    aspect = 1 / API_MAX_ASPECT;
+    clamped = true;
+  }
+
+  const target = BUCKET_TARGET_PIXELS[bucket];
+  if (!target) throw new Error(`Unknown size bucket "${bucket}"`);
+
+  // Solve W×H = target, W/H = aspect
+  let H = Math.sqrt(target / aspect);
+  let W = aspect * H;
+
+  // Respect max-edge ceiling before rounding.
+  const maxEdge = Math.max(W, H);
+  if (maxEdge > API_MAX_EDGE) {
+    const scale = API_MAX_EDGE / maxEdge;
+    W *= scale;
+    H *= scale;
+  }
+
+  let Wi = roundStep(W);
+  let Hi = roundStep(H);
+
+  // Rounding may push total pixels out of range; nudge back in.
+  while (Wi * Hi > API_MAX_PIXELS) {
+    if (Wi >= Hi) Wi -= STEP;
+    else Hi -= STEP;
+    if (Wi < STEP || Hi < STEP) break;
+  }
+  while (Wi * Hi < API_MIN_PIXELS) {
+    const canGrowW = Wi + STEP <= API_MAX_EDGE;
+    const canGrowH = Hi + STEP <= API_MAX_EDGE;
+    if (!canGrowW && !canGrowH) break;
+    if (canGrowW && (Wi <= Hi || !canGrowH)) Wi += STEP;
+    else Hi += STEP;
+  }
+
+  const g = gcd(Wi, Hi);
+  return {
+    size: `${Wi}x${Hi}`,
+    effectiveRatio: `${Wi / g}:${Hi / g}`,
+    clamped,
+  };
+}
+
+/**
+ * Back-compat thin wrapper around {@link resolveRatio} that returns only the
+ * size string. Prefer {@link resolveRatio} when you also need the effective
+ * ratio (e.g. to embed in a prompt) or want to know about clamping.
+ */
+export function ratioToSize(ratio: string, bucket: ImageSize = "2K"): string {
+  return resolveRatio(ratio, bucket).size;
+}
+
+// Logical aspect ratios the UI currently exposes. "5:1" / "6:1" / "4:1" /
+// "1:4" are NOT listed here because they exceed the 3:1 API limit and would
+// be silently clamped — surface them through `resolveRatio` if you want the
+// clamping to be explicit.
+export const OPENAI_SUPPORTED_RATIOS = [
+  "1:1",
+  "16:9",
+  "9:16",
+  "4:3",
+  "3:4",
+  "3:2",
+  "2:3",
+  "4:5",
+  "5:4",
+  "21:9",
+  "9:21",
+  "1:3",
+  "3:1",
+  "5:3",
+  "3:5",
+  "1:1.414",
+  "1.414:1",
+  "5:7",
+  "7:5",
+];

@@ -57,7 +57,6 @@ export interface Guideline {
   color_palette: Record<string, ColorEntry>;
   typography: Record<string, TypographyEntry>;
   graphic_motifs: GraphicMotifs;
-  layout_guide: Record<string, string>;
   logo_usage: Record<string, string>;
   mood: Mood;
   recraft_prompt?: string;

@@ -24,7 +24,6 @@ export async function generateProductionPlan(
       typography: guideline.typography,
       graphic_motifs: guideline.graphic_motifs,
       mood: guideline.mood,
-      layout_guide: guideline.layout_guide,
     },
     production_list: items,
   };

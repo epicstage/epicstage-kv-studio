@@ -1,9 +1,7 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import { generateGuideImage } from "./generation";
+import { useState } from "react";
 import GuideImageCard from "./guide-image-card";
-import { SECTION_DEFAULTS, SECTION_IMAGE_ID, SECTION_KEYS } from "./guide-sections";
 import type { Version } from "./types";
 import { useStore } from "./use-store";
 
@@ -51,7 +49,7 @@ function ColorSwatch({
   );
 }
 
-function ColorPaletteEditor({ version, autoGenerating }: { version: Version; autoGenerating?: boolean }) {
+function ColorPaletteEditor({ version }: { version: Version }) {
   const { updateColorPalette } = useStore();
   const palette = version.guideline?.color_palette;
   const [adding, setAdding] = useState(false);
@@ -146,52 +144,13 @@ function ColorPaletteEditor({ version, autoGenerating }: { version: Version; aut
         ))}
       </div>
 
-      <GuideImageCard version={version} sectionKey="color_palette" autoGenerating={autoGenerating} />
+      <GuideImageCard version={version} sectionKey="color_palette" />
     </div>
   );
 }
 
 export default function GuidelineViewer({ version }: { version: Version }) {
   const g = version.guideline;
-  const autoGenRef = useRef<string | null>(null);
-  const [autoGenerating, setAutoGenerating] = useState(false);
-
-  // 자동 생성: 버전이 바뀌면 아직 없는 가이드 이미지를 전부 순차 생성
-  useEffect(() => {
-    if (!g) return;
-    if (autoGenRef.current === version.id) return;
-    autoGenRef.current = version.id;
-
-    (async () => {
-      const items = g.guide_items_to_visualize || [];
-      const missing = SECTION_KEYS.filter((sk) => {
-        const itemId = SECTION_IMAGE_ID[sk];
-        return !version.guideImages?.[itemId];
-      });
-      if (missing.length === 0) return;
-
-      setAutoGenerating(true);
-      const { ciImages, refAnalysis } = useStore.getState();
-      const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
-
-      for (const sk of missing) {
-        const itemId = SECTION_IMAGE_ID[sk];
-        const item = items.find((i) => i.id === itemId) || SECTION_DEFAULTS[sk];
-        if (!item) continue;
-        // 생성 중 다른 버전으로 바뀌었으면 중단
-        if (useStore.getState().activeVersionId !== version.id) break;
-        try {
-          const url = await generateGuideImage(g, item, refAnalysis || undefined, ci, {
-            provider: version.provider ?? "gemini",
-          });
-          useStore.getState().setGuideImage(version.id, itemId, url);
-        } catch {
-          // 실패해도 다음 진행
-        }
-      }
-      setAutoGenerating(false);
-    })();
-  }, [version.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!g) return null;
 
@@ -214,7 +173,7 @@ export default function GuidelineViewer({ version }: { version: Version }) {
       </div>
 
       {/* Color palette — editable */}
-      <ColorPaletteEditor version={version} autoGenerating={autoGenerating} />
+      <ColorPaletteEditor version={version} />
 
       {/* Mood */}
       <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-5">
@@ -227,7 +186,7 @@ export default function GuidelineViewer({ version }: { version: Version }) {
           ))}
         </div>
         {g.mood.tone && <div className="mt-2 text-sm text-gray-500">톤: {g.mood.tone}</div>}
-        <GuideImageCard version={version} sectionKey="mood" autoGenerating={autoGenerating} />
+        <GuideImageCard version={version} sectionKey="mood" />
       </div>
 
       {/* Graphic motifs */}
@@ -243,24 +202,8 @@ export default function GuidelineViewer({ version }: { version: Version }) {
             ))}
           </div>
         </div>
-        <GuideImageCard version={version} sectionKey="graphic_motifs" autoGenerating={autoGenerating} />
+        <GuideImageCard version={version} sectionKey="graphic_motifs" />
       </div>
-
-      {/* Layout guide */}
-      {g.layout_guide && (
-        <div className="rounded-xl border border-gray-800 bg-gray-950/50 p-5">
-          <h4 className="mb-4 text-xs font-semibold uppercase tracking-wider text-gray-500">레이아웃 가이드</h4>
-          <div className="space-y-1.5 text-sm text-gray-400">
-            {Object.entries(g.layout_guide).map(([key, val]) => val && (
-              <div key={key} className="flex gap-2">
-                <span className="shrink-0 font-mono text-[10px] text-gray-600 uppercase">{key}</span>
-                <span>{val as string}</span>
-              </div>
-            ))}
-          </div>
-          <GuideImageCard version={version} sectionKey="layout_guide" autoGenerating={autoGenerating} />
-        </div>
-      )}
 
     </div>
   );

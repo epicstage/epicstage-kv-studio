@@ -12,7 +12,7 @@ import {
   PRODUCTION_SYSTEM,
   buildOpenAiPrompt,
 } from "../prompts";
-import { getProvider, type ImageSize } from "../providers";
+import { getProvider, resolveRatio, type ImageSize } from "../providers";
 
 export interface ProductionInput {
   name: string;
@@ -31,6 +31,12 @@ export interface ProductionInput {
 
 export interface ProductionOptions {
   provider?: ImageProviderId;
+  /**
+   * Text-only CI brief (from `analyzeCi`). OpenAI branch merges this into
+   * the prompt instead of attaching the CI image — prevents `/images/edits`
+   * from reproducing the logo in variants. Gemini branch ignores this.
+   */
+  ciBrief?: string;
 }
 
 const GEMINI_SUPPORTED_RATIOS = new Set([
@@ -81,7 +87,7 @@ export async function generateProductionImage(
   refAnalysis?: string,
   options?: ProductionOptions,
 ): Promise<string> {
-  const designSystem = extractDesignSystemForProduction(guideline, prod.name);
+  const designSystem = extractDesignSystemForProduction(guideline);
 
   const textLines: string[] = [];
   if (prod.headline) textLines.push(`- HEADLINE: "${prod.headline}"`);
@@ -126,6 +132,17 @@ REQUIREMENTS:
   if (provider === "openai") {
     const openai = getProvider("openai");
     if (!openai) throw new Error("OpenAI provider not available");
+    const bucket: ImageSize = (prod.imageSize as ImageSize) ?? "2K";
+    const resolved = resolveRatio(prod.ratio, bucket);
+    if (resolved.clamped && typeof console !== "undefined") {
+      console.warn(
+        `[production-image] OpenAI aspect clamped: ${prod.ratio} → ${resolved.effectiveRatio} (API limit 1:3..3:1) [${prod.name}]`,
+      );
+    }
+    // CI is passed as a text brief (`options.ciBrief`) rather than attached
+    // to refs — attaching the logo to `/images/edits` causes it to be
+    // reproduced in variants. Only the master KV is a legitimate visual
+    // ref here (it IS meant to be compositionally inherited).
     const refs: ImageData[] = [];
     const refRoles: string[] = [];
     if (masterKvUrl) {
@@ -137,18 +154,15 @@ REQUIREMENTS:
         );
       }
     }
-    const ciSlice = (ciImages ?? []).slice(0, 2);
-    refs.push(...ciSlice);
-    ciSlice.forEach(() =>
-      refRoles.push(
-        "Brand CI — reference ONLY for color palette and visual style. DO NOT draw, trace, or recreate the logo in the output. Artwork must be logo-free.",
-      ),
-    );
     const texts: Array<{ label: string; value: string; hint?: string }> = [];
     if (prod.headline) texts.push({ label: "HEADLINE", value: prod.headline });
     if (prod.subtext) texts.push({ label: "SUBTEXT", value: prod.subtext });
+    const ciBlock = options?.ciBrief?.trim()
+      ? `BRAND CI SYSTEM (text-only brief — no logo image is attached):\n${options.ciBrief.trim()}\nUse these palette/tone/graphic-character cues. DO NOT draw, invent, or render any logo, wordmark, emblem, or identifying mark.`
+      : "";
     const detailBlocks = [
       designSystem,
+      ciBlock,
       prod.imagePrompt ? `Visual direction: ${prod.imagePrompt}` : "",
       prod.layoutNote ? `Layout: ${prod.layoutNote}` : "",
       refAnalysis ? `Reference direction: ${refAnalysis}` : "",
@@ -161,7 +175,7 @@ REQUIREMENTS:
         : "Professional event graphic with coherent atmosphere drawn from the design system.",
       subject: `${prod.name} — production-ready flat graphic artwork.`,
       details: detailBlocks.join("\n\n"),
-      useCase: `${prod.name}, aspect ratio ${prod.ratio}. Production-ready print/digital output.`,
+      useCase: `${prod.name}, aspect ratio ${resolved.effectiveRatio}. Production-ready print/digital output.`,
       texts,
       refRoles,
       extraConstraints,
@@ -169,8 +183,8 @@ REQUIREMENTS:
     return openai.generate({
       prompt,
       system: PRODUCTION_SYSTEM,
-      ratio: prod.ratio,
-      size: (prod.imageSize as ImageSize) ?? "2K",
+      ratio: resolved.effectiveRatio,
+      size: bucket,
       refs,
     });
   }

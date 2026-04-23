@@ -14,5 +14,10 @@ export function getProvider(id: ProviderId): ImageProvider | undefined {
   return PROVIDERS[id];
 }
 
-export { ratioToSize, OPENAI_SUPPORTED_RATIOS } from "./ratio-to-size";
+export {
+  ratioToSize,
+  resolveRatio,
+  OPENAI_SUPPORTED_RATIOS,
+  type ResolvedRatio,
+} from "./ratio-to-size";
 export type { GenerateRequest, ImageProvider, ImageSize, ProviderId } from "./types";

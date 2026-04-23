@@ -24,6 +24,7 @@ export default function ProductionGrid() {
     setProcessing,
     addLog,
     ciImages,
+    ciBrief,
     refAnalysis,
     productionPlan,
     setProductionPlan,
@@ -199,7 +200,10 @@ export default function ProductionGrid() {
               ci,
               masterKvUrl,
               refAnalysis || undefined,
-              { provider: activeVersion.provider ?? "gemini" },
+              {
+                provider: activeVersion.provider ?? "gemini",
+                ciBrief: ciBrief || undefined,
+              },
             );
             up(prod.id, { status: "done", imageUrl });
             addLog(`${prod.name} 완료`, "ok");

@@ -56,7 +56,7 @@ export default function ProductionCard({ prod, onDelete }: Props) {
   async function handleRegenerate() {
     if (!activeVersion) return;
     updateProduction(prod.id, { status: "generating", error: undefined, stale: false });
-    const { ciImages, refAnalysis } = useStore.getState();
+    const { ciImages, ciBrief, refAnalysis } = useStore.getState();
     const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
     const masterKvUrl = activeVersion.masterKv?.imageUrl;
     try {
@@ -66,7 +66,10 @@ export default function ProductionCard({ prod, onDelete }: Props) {
         ci,
         masterKvUrl,
         refAnalysis || undefined,
-        { provider: activeVersion.provider ?? "gemini" },
+        {
+          provider: activeVersion.provider ?? "gemini",
+          ciBrief: ciBrief || undefined,
+        },
       );
       updateProduction(prod.id, { status: "done", imageUrl });
     } catch (err) {

@@ -9,10 +9,9 @@ import { useStore } from "./use-store";
 interface Props {
   version: Version;
   sectionKey: string;
-  autoGenerating?: boolean;
 }
 
-export default function GuideImageCard({ version, sectionKey, autoGenerating }: Props) {
+export default function GuideImageCard({ version, sectionKey }: Props) {
   const { setGuideImage, refAnalysis } = useStore();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -22,7 +21,7 @@ export default function GuideImageCard({ version, sectionKey, autoGenerating }: 
     version.guideline?.guide_items_to_visualize?.find((i) => i.id === itemId) ||
     SECTION_DEFAULTS[sectionKey];
   const imageUrl = version.guideImages?.[itemId];
-  const isLoading = loading || (autoGenerating && !imageUrl);
+  const isLoading = loading;
 
   if (!item) return null;
 
@@ -31,14 +30,17 @@ export default function GuideImageCard({ version, sectionKey, autoGenerating }: 
     setLoading(true);
     setError("");
     try {
-      const { ciImages } = useStore.getState();
+      const { ciImages, ciBrief } = useStore.getState();
       const ci = ciImages.map((img) => ({ mime: img.mime, base64: img.base64 }));
       const url = await generateGuideImage(
         version.guideline,
         item,
         refAnalysis || undefined,
         ci,
-        { provider: version.provider ?? "gemini" },
+        {
+          provider: version.provider ?? "gemini",
+          ciBrief: ciBrief || undefined,
+        },
       );
       setGuideImage(version.id, itemId, url);
     } catch (e) {

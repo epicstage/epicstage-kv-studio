@@ -44,6 +44,15 @@ interface StudioStore {
   addCiImage: (img: NamedImageData) => void;
   removeCiImage: (id: string) => void;
 
+  /**
+   * CI brief — JSON-string output of `analyzeCi()`. Used as the textual
+   * substitute for the raw CI images when calling GPT Image 2, so the logo
+   * influences palette/tone without being reproduced by `/images/edits`.
+   * Invalidated (reset to "") whenever `ciImages` changes.
+   */
+  ciBrief: string;
+  setCiBrief: (v: string) => void;
+
   ciDocs: DocData[];
   addCiDoc: (doc: DocData) => void;
   removeCiDoc: (id: string) => void;
@@ -127,8 +136,16 @@ export const useStore = create<StudioStore>((set) => ({
   styleOverride: "",
   setStyleOverride: (v) => set({ styleOverride: v }),
   ciImages: [],
-  addCiImage: (img) => set((s) => ({ ciImages: [...s.ciImages, img] })),
-  removeCiImage: (id) => set((s) => ({ ciImages: s.ciImages.filter((i) => i.id !== id) })),
+  addCiImage: (img) =>
+    set((s) => ({ ciImages: [...s.ciImages, img], ciBrief: "" })),
+  removeCiImage: (id) =>
+    set((s) => ({
+      ciImages: s.ciImages.filter((i) => i.id !== id),
+      ciBrief: "",
+    })),
+
+  ciBrief: "",
+  setCiBrief: (v) => set({ ciBrief: v }),
 
   ciDocs: [],
   addCiDoc: (doc) => set((s) => ({ ciDocs: [...s.ciDocs, doc] })),

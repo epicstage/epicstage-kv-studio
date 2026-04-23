@@ -155,6 +155,7 @@ function getSerializableState() {
     productions: s.productions,
     productionPlan: s.productionPlan,
     refAnalysis: s.refAnalysis,
+    ciBrief: s.ciBrief,
     ciImages: s.ciImages,
     ciDocs: s.ciDocs,
     refFiles: s.refFiles,
@@ -170,6 +171,7 @@ function restoreState(saved: any) {
   s.setTier(saved.tier || "self");
   s.setStyleOverride(saved.styleOverride || "");
   s.setRefAnalysis(saved.refAnalysis || "");
+  s.setCiBrief(saved.ciBrief || "");
 
   // versions — 기존 것 교체 (addVersion 누적 아님)
   useStore.setState({

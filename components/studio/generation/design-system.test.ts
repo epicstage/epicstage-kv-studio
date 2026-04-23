@@ -3,7 +3,6 @@ import type { Guideline } from "../types";
 import {
   extractDesignSystemForProduction,
   extractGuideFieldsForItem,
-  findBestLayoutMatch,
 } from "./design-system";
 
 function guideline(overrides: Partial<Guideline> = {}): Guideline {
@@ -33,34 +32,12 @@ function guideline(overrides: Partial<Guideline> = {}): Guideline {
       texture: "matte",
       icon_style: "outline",
     },
-    layout_guide: {
-      kv: "중앙 집중",
-      banner_horizontal: "좌정렬",
-      sns_square: "상단 타이틀",
-      sns_story: "세로 구조",
-      stage_backdrop: "횡단",
-      entrance_banner: "세로",
-      photowall: "격자",
-    },
     logo_usage: { primary_placement: "우하단", min_size: "30mm", clear_space: "1x", on_dark: "", on_light: "" },
     mood: { keywords: ["bold", "clean"], tone: "정돈된" },
     guide_items_to_visualize: [],
     ...overrides,
   };
 }
-
-describe("findBestLayoutMatch", () => {
-  it("matches Korean keywords to layout keys", () => {
-    const g = guideline().layout_guide;
-    expect(findBestLayoutMatch("메인 KV", g)).toBe("kv");
-    expect(findBestLayoutMatch("무대 배경", g)).toBe("stage_backdrop");
-    expect(findBestLayoutMatch("인스타그램 피드", g)).toBe("sns_square");
-  });
-
-  it("returns null when nothing matches", () => {
-    expect(findBestLayoutMatch("굿즈 가방", guideline().layout_guide)).toBeNull();
-  });
-});
 
 describe("extractGuideFieldsForItem", () => {
   it("returns only palette + mood for color_palette_sheet", () => {
@@ -81,16 +58,15 @@ describe("extractGuideFieldsForItem", () => {
 
 describe("extractDesignSystemForProduction", () => {
   it("inlines hex colors and mood keywords", () => {
-    const s = extractDesignSystemForProduction(guideline(), "KV");
+    const s = extractDesignSystemForProduction(guideline());
     expect(s).toContain("primary: #112233");
     expect(s).toContain("secondary: #445566");
     expect(s).toContain("(bold, clean)");
-    expect(s).toContain("Layout: 중앙 집중");
     expect(s).toContain('EVENT: "행사"');
   });
 
-  it("omits layout line when no keyword matches", () => {
-    const s = extractDesignSystemForProduction(guideline(), "에코백");
+  it("does not emit any layout line", () => {
+    const s = extractDesignSystemForProduction(guideline());
     expect(s).not.toContain("Layout:");
   });
 });

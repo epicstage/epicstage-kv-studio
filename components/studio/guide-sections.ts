@@ -6,7 +6,6 @@ export const SECTION_IMAGE_ID: Record<string, string> = {
   typography: "typography_sheet",
   mood: "mood_board",
   graphic_motifs: "motif_board",
-  layout_guide: "layout_sketches",
   logo_usage: "logo_usage_sheet",
 };
 
@@ -28,11 +27,6 @@ export const SECTION_DEFAULTS: Record<string, GuideItem> = {
     id: "motif_board",
     label: "모티프 보드",
     description: "그래픽 모티프 예시 이미지",
-  },
-  layout_guide: {
-    id: "layout_sketches",
-    label: "레이아웃 스케치",
-    description: "레이아웃 가이드 예시 이미지",
   },
   logo_usage: {
     id: "logo_usage_sheet",
